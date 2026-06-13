@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -144,7 +145,9 @@ def test_database_log_sanitizer_masks_credentials_and_paths() -> None:
     sqlite_sanitized = sanitize_database_url_for_logs("sqlite+pysqlite:///C:/secret/path/pilot_real.sqlite3")
     assert "secret/path" not in sqlite_sanitized
     assert "pilot_real.sqlite3" in sqlite_sanitized
-    assert sanitize_sqlite_path_for_logs(r"C:\secret\path\pilot_real.sqlite3") == r"...\pilot_real.sqlite3"
+    assert sanitize_sqlite_path_for_logs("/secret/path/pilot_real.sqlite3") == str(
+        Path("...") / "pilot_real.sqlite3"
+    )
 
 
 def test_login_rate_limit_blocks_brute_force_attempts() -> None:
