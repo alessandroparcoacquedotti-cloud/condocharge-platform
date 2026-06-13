@@ -7,7 +7,7 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
 from mitmproxy import ctx, http
@@ -71,7 +71,7 @@ def _decode_or_base64(data: bytes, *, max_bytes: int) -> CapturedMessageBody:
 
 def _headers_to_dict(headers: http.Headers) -> dict[str, str]:
     out: dict[str, str] = {}
-    for k, v in headers.items(multi=True):
+    for k, v in cast(Any, headers).items(multi=True):
         key = k
         if key in out:
             out[key] = f"{out[key]}, {v}"
@@ -143,7 +143,7 @@ class LegrandCaptureProxy:
         )
         self._flows.append(captured)
         self._index_by_flow_id[flow.id] = len(self._flows) - 1
-        ctx.log.info(f"{req.method} {req.url}")
+        cast(Any, ctx.log).info(f"{req.method} {req.url}")
 
     def response(self, flow: http.HTTPFlow) -> None:
         if not self._should_capture(flow):
@@ -199,7 +199,7 @@ class LegrandCaptureProxy:
             "flows": [asdict(f) for f in self._flows],
         }
         output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        ctx.log.info(f"Wrote capture report: {output_path}")
+        cast(Any, ctx.log).info(f"Wrote capture report: {output_path}")
 
     def _hosts(self) -> set[str]:
         raw = str(ctx.options.legrand_hosts)
@@ -230,20 +230,20 @@ def main(argv: list[str]) -> int:
     master = DumpMaster(opts, with_termlog=True, with_dumper=False)
 
     addon = LegrandCaptureProxy()
-    master.addons.add(addon)
+    cast(Any, master.addons).add(addon)
 
-    master.options.update(
+    cast(Any, master.options).update(
         legrand_hosts=str(args.hosts),
         legrand_capture_output=str(args.output),
         legrand_capture_max_bytes=int(args.max_bytes),
     )
 
     try:
-        master.run()
+        cast(Any, master).run()
     except KeyboardInterrupt:
         pass
     finally:
-        master.shutdown()
+        cast(Any, master).shutdown()
     return 0
 
 

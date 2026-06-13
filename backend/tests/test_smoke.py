@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from condocharge.core.config import get_settings
 from condocharge.main import app, create_app
@@ -28,7 +29,7 @@ def test_pilot_startup_refuses_wildcard_cors(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("CONDOCHARGE_JWT_SECRET_KEY", "this-is-a-safe-pilot-secret-1234567890")
     monkeypatch.setenv("CONDOCHARGE_CORS_ORIGINS", "[\"*\"]")
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError, match="cors_origins\\.0"):
         create_app()
 
     get_settings.cache_clear()

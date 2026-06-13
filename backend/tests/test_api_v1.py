@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -45,8 +45,8 @@ def _seed_data(db: Session) -> dict[str, int]:
                 source_key="s1",
                 station_id=station1.id,
                 rfid_user_id=user1.id,
-                start_time=datetime(2026, 6, 1, 8, 0, tzinfo=timezone.utc),
-                end_time=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+                start_time=datetime(2026, 6, 1, 8, 0, tzinfo=UTC),
+                end_time=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
                 energy_wh=7000,
                 total_minutes=60,
                 charging_minutes=55,
@@ -58,8 +58,8 @@ def _seed_data(db: Session) -> dict[str, int]:
                 source_key="s2",
                 station_id=station1.id,
                 rfid_user_id=user2.id,
-                start_time=datetime(2026, 6, 2, 8, 0, tzinfo=timezone.utc),
-                end_time=datetime(2026, 6, 2, 8, 30, tzinfo=timezone.utc),
+                start_time=datetime(2026, 6, 2, 8, 0, tzinfo=UTC),
+                end_time=datetime(2026, 6, 2, 8, 30, tzinfo=UTC),
                 energy_wh=3500,
                 total_minutes=30,
                 charging_minutes=28,
@@ -71,8 +71,8 @@ def _seed_data(db: Session) -> dict[str, int]:
                 source_key="s3",
                 station_id=station2.id,
                 rfid_user_id=user1.id,
-                start_time=datetime(2026, 6, 3, 10, 0, tzinfo=timezone.utc),
-                end_time=datetime(2026, 6, 3, 11, 15, tzinfo=timezone.utc),
+                start_time=datetime(2026, 6, 3, 10, 0, tzinfo=UTC),
+                end_time=datetime(2026, 6, 3, 11, 15, tzinfo=UTC),
                 energy_wh=9000,
                 total_minutes=75,
                 charging_minutes=70,

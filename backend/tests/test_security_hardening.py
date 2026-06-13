@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -89,7 +90,7 @@ def _store_invitation_token(
     created_at: datetime | None = None,
     expires_at: datetime | None = None,
 ) -> None:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     created = created_at or now
     expires = expires_at or (now + timedelta(hours=24))
     with session_factory() as db:
@@ -212,14 +213,14 @@ def test_password_change_invalidates_old_tokens() -> None:
 
 def test_invitation_completion_does_not_reactivate_disabled_user() -> None:
     client, session_factory = _build_client()
-    issued_at = datetime.now(tz=timezone.utc) - timedelta(minutes=10)
+    issued_at = datetime.now(tz=UTC) - timedelta(minutes=10)
     _store_invitation_token(session_factory, resident_username="invited", token="disabled-invite", created_at=issued_at)
 
     with session_factory() as db:
         invited = db.scalar(select(AppUser).where(AppUser.username == "invited"))
         assert invited is not None
         invited.is_active = 0
-        invited.updated_at = datetime.now(tz=timezone.utc)
+        invited.updated_at = datetime.now(tz=UTC)
         db.commit()
 
     blocked = client.post(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import cast
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -78,9 +79,10 @@ class CreateAppUserRequest(BaseModel):
     def validate_email(cls, value: str | None) -> str | None:
         if value in (None, ""):
             return None
-        if not EMAIL_RE.match(value):
+        email = cast(str, value)
+        if not EMAIL_RE.match(email):
             raise ValueError("Invalid email format")
-        return value
+        return email
 
 
 class SyncSessionsRequest(BaseModel):

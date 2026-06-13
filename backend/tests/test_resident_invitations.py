@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -211,7 +211,7 @@ def test_token_expiration_and_invalid_token(invitation_email) -> None:
             select(ResidentInvitationToken).where(ResidentInvitationToken.app_user_id == created["resident"]["id"])
         )
         assert invitation is not None
-        invitation.expires_at = datetime.now(tz=timezone.utc) - timedelta(minutes=1)
+        invitation.expires_at = datetime.now(tz=UTC) - timedelta(minutes=1)
         db.commit()
 
     expired = harness.client.get(f"/api/v1/auth/invitation/{token}")

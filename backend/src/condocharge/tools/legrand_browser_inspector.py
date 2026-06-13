@@ -9,7 +9,7 @@ import traceback
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from playwright.sync_api import (
@@ -634,13 +634,13 @@ def main(argv: list[str]) -> int:
             _print_error("Capture interrupted by operator. Continuing with report export.")
         finally:
             try:
-                cookies = context.cookies()
+                cookies = cast(list[dict[str, Any]], context.cookies())
             except Exception as exc:
                 _print_error("Failed to collect browser cookies.", exc)
                 cookies = []
 
             try:
-                storage_state = context.storage_state()
+                storage_state = cast(dict[str, Any], context.storage_state())
             except Exception as exc:
                 _print_error("Failed to collect browser storage state.", exc)
                 storage_state = {}

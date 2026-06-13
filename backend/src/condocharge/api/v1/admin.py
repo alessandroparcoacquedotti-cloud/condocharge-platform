@@ -6,7 +6,7 @@ import re
 import secrets
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
@@ -583,8 +583,9 @@ def poll_stations(db: DbSession, body: PollStationsRequest, admin_user: AdminUse
                 station.status = computed
                 station.status_source = "polling"
                 station.last_sync_at = observed_at
-                setattr(station, "active_session", computed == "charging")
-                setattr(station, "active_session_source", "polling")
+                station_runtime = cast(Any, station)
+                station_runtime.active_session = computed == "charging"
+                station_runtime.active_session_source = "polling"
                 items.append(
                     PolledStationResponse(
                         station_id=station.id,
@@ -599,8 +600,9 @@ def poll_stations(db: DbSession, body: PollStationsRequest, admin_user: AdminUse
                 station.status = "offline"
                 station.status_source = "polling"
                 station.last_sync_at = datetime.now(tz=UTC)
-                setattr(station, "active_session", False)
-                setattr(station, "active_session_source", "polling")
+                station_runtime = cast(Any, station)
+                station_runtime.active_session = False
+                station_runtime.active_session_source = "polling"
                 errors.append(f"{host}: {type(exc).__name__}: {exc}")
 
         db.commit()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -170,7 +170,7 @@ def test_dedupe_prevents_duplicate_charging_completed_email() -> None:
             condo=condo,
             station=station,
             resident=resident,
-            end_time=datetime.now(tz=timezone.utc) - timedelta(minutes=5),
+            end_time=datetime.now(tz=UTC) - timedelta(minutes=5),
         )
         service = ResidentNotificationService(db=db, settings=settings)
 
@@ -192,7 +192,7 @@ def test_historical_session_import_does_not_notify() -> None:
     session_factory = _build_session_factory()
     db = session_factory()
     try:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         condo = _seed_condo(db)
         _seed_resident(db, condo=condo, username="RFID-1", email="resident@example.com")
         driver = FakeDriver(
@@ -232,7 +232,7 @@ def test_recent_session_import_creates_preview_notification_when_smtp_disabled()
     session_factory = _build_session_factory()
     db = session_factory()
     try:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         condo = _seed_condo(db)
         _seed_resident(db, condo=condo, username="RFID-2", email="resident@example.com")
         driver = FakeDriver(
@@ -289,7 +289,7 @@ def test_station_available_transition_creates_preview_notifications() -> None:
                             station_id=station.id,
                             condominium_id=condo.id,
                             computed_status="charging",
-                            observed_at=datetime.now(tz=timezone.utc) - timedelta(minutes=1),
+                            observed_at=datetime.now(tz=UTC) - timedelta(minutes=1),
                         )
                     ],
                     [
@@ -297,7 +297,7 @@ def test_station_available_transition_creates_preview_notifications() -> None:
                             station_id=station.id,
                             condominium_id=condo.id,
                             computed_status="available",
-                            observed_at=datetime.now(tz=timezone.utc),
+                            observed_at=datetime.now(tz=UTC),
                         )
                     ],
                 ]
@@ -324,7 +324,7 @@ def test_cooldown_prevents_station_available_spam() -> None:
     db = session_factory()
     try:
         settings = _build_settings()
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         condo = _seed_condo(db)
         station_a = _seed_station(db, condo=condo, host="192.168.1.200")
         station_b = _seed_station(db, condo=condo, host="192.168.1.201")
@@ -387,7 +387,7 @@ def test_preferences_are_respected_for_station_available_notifications() -> None
                             station_id=station.id,
                             condominium_id=condo.id,
                             computed_status="offline",
-                            observed_at=datetime.now(tz=timezone.utc) - timedelta(minutes=1),
+                            observed_at=datetime.now(tz=UTC) - timedelta(minutes=1),
                         )
                     ],
                     [
@@ -395,7 +395,7 @@ def test_preferences_are_respected_for_station_available_notifications() -> None
                             station_id=station.id,
                             condominium_id=condo.id,
                             computed_status="available",
-                            observed_at=datetime.now(tz=timezone.utc),
+                            observed_at=datetime.now(tz=UTC),
                         )
                     ],
                 ]

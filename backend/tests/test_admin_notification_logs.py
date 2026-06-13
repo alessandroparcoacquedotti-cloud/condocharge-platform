@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -12,7 +12,12 @@ from condocharge.api.deps import get_db_session
 from condocharge.core.security import hash_password
 from condocharge.db.base import Base
 from condocharge.main import create_app
-from condocharge.models.tenancy import AppUser, Condominium, ResidentEmailNotification, ResidentNotificationPreferences
+from condocharge.models.tenancy import (
+    AppUser,
+    Condominium,
+    ResidentEmailNotification,
+    ResidentNotificationPreferences,
+)
 
 
 def _build_client() -> tuple[TestClient, sessionmaker[Session], dict[str, int]]:
@@ -66,7 +71,7 @@ def _build_client() -> tuple[TestClient, sessionmaker[Session], dict[str, int]]:
                     notification_type="charging_completed",
                     dedupe_key="session:1",
                     status="preview",
-                    created_at=datetime(2026, 6, 12, 12, 0, tzinfo=timezone.utc),
+                    created_at=datetime(2026, 6, 12, 12, 0, tzinfo=UTC),
                 ),
                 ResidentEmailNotification(
                     condominium_id=condo.id,
@@ -75,7 +80,7 @@ def _build_client() -> tuple[TestClient, sessionmaker[Session], dict[str, int]]:
                     dedupe_key="station:1:transition:2026-06-12T12:05:00Z:resident:1",
                     status="failed",
                     error_message="SMTP down",
-                    created_at=datetime(2026, 6, 12, 12, 5, tzinfo=timezone.utc),
+                    created_at=datetime(2026, 6, 12, 12, 5, tzinfo=UTC),
                 ),
                 ResidentEmailNotification(
                     condominium_id=condo.id,
@@ -83,8 +88,8 @@ def _build_client() -> tuple[TestClient, sessionmaker[Session], dict[str, int]]:
                     notification_type="station_available",
                     dedupe_key="station:1:transition:2026-06-12T12:10:00Z:resident:1",
                     status="sent",
-                    sent_at=datetime(2026, 6, 12, 12, 10, tzinfo=timezone.utc),
-                    created_at=datetime(2026, 6, 12, 12, 10, tzinfo=timezone.utc),
+                    sent_at=datetime(2026, 6, 12, 12, 10, tzinfo=UTC),
+                    created_at=datetime(2026, 6, 12, 12, 10, tzinfo=UTC),
                 ),
             ]
         )

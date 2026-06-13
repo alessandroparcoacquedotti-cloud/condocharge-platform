@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -92,8 +92,8 @@ def _build_client() -> TestClient:
                     source_key="a1",
                     station_id=station_a.id,
                     rfid_user_id=rfid_a.id,
-                    start_time=datetime(2026, 6, 1, 8, 0, tzinfo=timezone.utc),
-                    end_time=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+                    start_time=datetime(2026, 6, 1, 8, 0, tzinfo=UTC),
+                    end_time=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
                     energy_wh=5000,
                     total_minutes=60,
                     charging_minutes=55,
@@ -105,8 +105,8 @@ def _build_client() -> TestClient:
                     source_key="b1",
                     station_id=station_b.id,
                     rfid_user_id=rfid_b.id,
-                    start_time=datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc),
-                    end_time=datetime(2026, 6, 1, 11, 0, tzinfo=timezone.utc),
+                    start_time=datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+                    end_time=datetime(2026, 6, 1, 11, 0, tzinfo=UTC),
                     energy_wh=8000,
                     total_minutes=60,
                     charging_minutes=60,

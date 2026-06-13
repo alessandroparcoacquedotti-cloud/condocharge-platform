@@ -203,11 +203,21 @@ def _extract_homepage_metadata(*, url: str, html: str) -> HomepageMetadata:
     soup = BeautifulSoup(html, "html.parser")
     title = soup.title.string.strip() if soup.title and soup.title.string else None
 
-    script_src = [t.get("src") for t in soup.find_all("script") if t.get("src")]
-    link_href = [t.get("href") for t in soup.find_all("link") if t.get("href")]
-    form_action = [t.get("action") for t in soup.find_all("form") if t.get("action")]
-    iframe_src = [t.get("src") for t in soup.find_all("iframe") if t.get("src")]
-    anchor_href = [t.get("href") for t in soup.find_all("a") if t.get("href")]
+    def collect_attr(tag_name: str, attr_name: str) -> list[str]:
+        values: list[str] = []
+        for tag in soup.find_all(tag_name):
+            raw_value = tag.get(attr_name)
+            if isinstance(raw_value, str):
+                values.append(raw_value)
+            elif isinstance(raw_value, list):
+                values.extend(value for value in raw_value if isinstance(value, str))
+        return values
+
+    script_src = collect_attr("script", "src")
+    link_href = collect_attr("link", "href")
+    form_action = collect_attr("form", "action")
+    iframe_src = collect_attr("iframe", "src")
+    anchor_href = collect_attr("a", "href")
 
     return HomepageMetadata(
         url=url,

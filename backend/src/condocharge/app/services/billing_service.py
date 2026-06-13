@@ -1115,17 +1115,16 @@ class BillingService:
         normalized_to = _normalize_utc(received_to_date)
         filtered: list[ResidentBillingStatement] = []
         for statement in rows:
+            def payment_in_received_range(payment: BillingPayment) -> bool:
+                received_at = _normalize_utc(payment.received_at)
+                if normalized_from is not None and (received_at is None or received_at < normalized_from):
+                    return False
+                return normalized_to is None or (received_at is not None and received_at <= normalized_to)
+
             matching = [
                 payment
                 for payment in statement.payments
-                if (
-                    normalized_from is None
-                    or ((_normalize_utc(payment.received_at)) is not None and _normalize_utc(payment.received_at) >= normalized_from)
-                )
-                and (
-                    normalized_to is None
-                    or ((_normalize_utc(payment.received_at)) is not None and _normalize_utc(payment.received_at) <= normalized_to)
-                )
+                if payment_in_received_range(payment)
             ]
             if matching:
                 filtered.append(statement)

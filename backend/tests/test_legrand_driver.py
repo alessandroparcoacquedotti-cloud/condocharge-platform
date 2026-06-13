@@ -8,7 +8,6 @@ import httpx
 
 from condocharge.app.integrations.legrand.driver import LegrandGreenUpDriver
 
-
 LOGIN_PAGE = "<html><body><div class='connexion-box'>login</div></body></html>"
 
 TABLEAU_RIGHT_HTML = (
@@ -100,9 +99,9 @@ def _make_transport(state: dict[str, Any]) -> httpx.MockTransport:
             kind = (query.get("type") or [""])[0]
             if side == "right" and kind == "chargeSession":
                 csv_bytes = (
-                    "Data inizio;Data fine;Energia (Wh);Minuti totali;Minuti carica;Minuti attesa;Tipo presa;ID RFID;Nome RFID\n"
-                    "09/06/2026 12:00:00;09/06/2026 12:30:00;3500;30;25;5;Type2;1234;Mario\n"
-                ).encode("utf-8")
+                    b"Data inizio;Data fine;Energia (Wh);Minuti totali;Minuti carica;Minuti attesa;Tipo presa;ID RFID;Nome RFID\n"
+                    b"09/06/2026 12:00:00;09/06/2026 12:30:00;3500;30;25;5;Type2;1234;Mario\n"
+                )
                 return httpx.Response(
                     200,
                     headers={"Content-Type": "text/csv"},

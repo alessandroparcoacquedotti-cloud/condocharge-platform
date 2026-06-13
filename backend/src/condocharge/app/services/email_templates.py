@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from html import escape
+from typing import cast
 
 from condocharge.models.billing import ResidentBillingStatement
+from condocharge.models.tenancy import AppUser
 
 SUPPORT_PLACEHOLDER = "support@condocharge.local"
 
@@ -23,11 +25,16 @@ def _payment_date(statement: ResidentBillingStatement) -> str:
     return latest_payment_date.isoformat()
 
 
+def _statement_resident(statement: ResidentBillingStatement) -> AppUser:
+    return cast(AppUser, statement.resident)
+
+
 def _common_lines(*, condominium_name: str, statement: ResidentBillingStatement) -> list[tuple[str, str]]:
+    resident = _statement_resident(statement)
     return [
         ("Condominium", condominium_name),
-        ("Resident", statement.resident.username),
-        ("Resident email", statement.resident.email or "-"),
+        ("Resident", resident.username),
+        ("Resident email", resident.email or "-"),
         ("Statement number", statement.statement_number),
         ("Payment reference", statement.payment_reference),
         ("Amount due", f"EUR {float(statement.amount_due_eur):.2f}"),

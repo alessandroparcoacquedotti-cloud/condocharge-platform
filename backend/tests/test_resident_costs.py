@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -98,8 +98,8 @@ def _build_client() -> TestClient:
                     source_key="s1",
                     station_id=station.id,
                     rfid_user_id=card1.id,
-                    start_time=datetime(2026, 6, 1, 8, 0, tzinfo=timezone.utc),
-                    end_time=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+                    start_time=datetime(2026, 6, 1, 8, 0, tzinfo=UTC),
+                    end_time=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
                     energy_wh=10000,
                     total_minutes=60,
                     charging_minutes=55,
@@ -111,8 +111,8 @@ def _build_client() -> TestClient:
                     source_key="s2",
                     station_id=station.id,
                     rfid_user_id=card2.id,
-                    start_time=datetime(2026, 6, 10, 8, 0, tzinfo=timezone.utc),
-                    end_time=datetime(2026, 6, 10, 9, 0, tzinfo=timezone.utc),
+                    start_time=datetime(2026, 6, 10, 8, 0, tzinfo=UTC),
+                    end_time=datetime(2026, 6, 10, 9, 0, tzinfo=UTC),
                     energy_wh=5000,
                     total_minutes=60,
                     charging_minutes=60,

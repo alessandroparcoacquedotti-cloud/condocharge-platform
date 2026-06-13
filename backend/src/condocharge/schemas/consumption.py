@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import cast
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -144,7 +145,7 @@ class UpdateResidentRequest(BaseModel):
     def validate_email(cls, value: str | None) -> str | None:
         if value in (None, ""):
             return None
-        email = value
+        email = cast(str, value)
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
             raise ValueError("Invalid email format")
         return email
@@ -182,7 +183,7 @@ class UpdateResidentProfileRequest(BaseModel):
     def validate_profile_email(cls, value: str | None) -> str | None:
         if value in (None, ""):
             return None
-        email = value
+        email = cast(str, value)
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
             raise ValueError("Invalid email format")
         return email

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from condocharge.app.integrations.legrand.discovery.models import (
     HttpMethod,
@@ -9,7 +9,6 @@ from condocharge.app.integrations.legrand.discovery.models import (
     ResponseSnapshot,
 )
 from condocharge.app.integrations.legrand.discovery.service import LegrandDiscoveryService
-from condocharge.app.integrations.legrand.discovery.transport import DiscoveryTransport
 
 
 class FakeTransport:
@@ -48,7 +47,7 @@ def test_discovery_classifies_html_json_xml() -> None:
     }
 
     service = LegrandDiscoveryService(transport=FakeTransport(mapping))
-    report = service.discover(targets=[target], requests=requests, now=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    report = service.discover(targets=[target], requests=requests, now=datetime(2026, 1, 1, tzinfo=UTC))
 
     kinds = {o.request.path: o.content_kind for o in report.observations}
     assert str(kinds["/ui"]) == "html"

@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import Any, Final, TypedDict, cast
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
@@ -74,6 +74,18 @@ class LegrandGreenUpRfidStatus(BaseModel):
 class _Credentials:
     username: str
     password: str
+
+
+class _ResolvedChargeSessionHeaders(TypedDict):
+    start_time: str
+    end_time: str
+    energy_wh: str
+    total_minutes: str
+    charging_minutes: str
+    idle_minutes: str
+    plug_type: str | None
+    rfid_id: str | None
+    rfid_name: str | None
 
 
 def _js_timezone_offset_minutes(now: datetime | None = None) -> int:
@@ -163,9 +175,9 @@ def _parse_duration_minutes(value: str) -> int | None:
 
 def _sniff_csv_dialect(text: str) -> csv.Dialect:
     try:
-        return csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
+        return cast(csv.Dialect, csv.Sniffer().sniff(text[:4096], delimiters=",;\t|"))
     except Exception:
-        return csv.get_dialect("excel")
+        return cast(csv.Dialect, csv.get_dialect("excel"))
 
 
 class LegrandGreenUpDriver:
@@ -316,7 +328,7 @@ class LegrandGreenUpDriver:
             raise LegrandGreenUpProtocolError("CSV has no header row")
 
         header_map = {self._normalize_csv_header(h): h for h in reader.fieldnames if h is not None}
-        resolved = self._resolve_charge_session_headers(header_map.keys())
+        resolved = self._resolve_charge_session_headers(set(header_map))
 
         sessions: list[ChargingSession] = []
         for idx, row in enumerate(reader, start=2):
@@ -351,7 +363,7 @@ class LegrandGreenUpDriver:
         return f"http://{host}".rstrip("/")
 
     def _retry_delay(self, attempt: int) -> float:
-        base = min(self._max_retry_delay_s, self._base_retry_delay_s * (2**attempt))
+        base = float(min(self._max_retry_delay_s, self._base_retry_delay_s * (2**attempt)))
         return base * (0.75 + (random.random() * 0.5))
 
     def _request_with_retries(
@@ -495,7 +507,7 @@ class LegrandGreenUpDriver:
         h = h.replace("’", "'")
         return h
 
-    def _resolve_charge_session_headers(self, normalized_headers: set[str]) -> dict[str, str]:
+    def _resolve_charge_session_headers(self, normalized_headers: set[str]) -> _ResolvedChargeSessionHeaders:
         def pick(*candidates: str) -> str:
             for c in candidates:
                 if c in normalized_headers:
@@ -576,10 +588,10 @@ class LegrandGreenUpDriver:
     def _row_to_charging_session(
         self,
         row: dict[str, Any],
-        resolved_headers: dict[str, str],
+        resolved_headers: _ResolvedChargeSessionHeaders,
     ) -> ChargingSession:
         def get(name: str) -> str:
-            key = resolved_headers[name]
+            key = cast(dict[str, str], resolved_headers)[name]
             actual = None
             for k, v in row.items():
                 if self._normalize_csv_header(k) == key:

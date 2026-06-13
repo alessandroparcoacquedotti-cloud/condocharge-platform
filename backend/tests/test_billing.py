@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-from datetime import datetime, timezone
 import os
+from collections.abc import Iterator
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -85,8 +85,8 @@ def _build_client() -> TestClient:
                     source_key="a1",
                     station_id=station_a.id,
                     rfid_user_id=card_a1.id,
-                    start_time=datetime(2026, 6, 1, 8, 0, tzinfo=timezone.utc),
-                    end_time=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+                    start_time=datetime(2026, 6, 1, 8, 0, tzinfo=UTC),
+                    end_time=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
                     energy_wh=10000,
                     total_minutes=60,
                     charging_minutes=55,
@@ -98,8 +98,8 @@ def _build_client() -> TestClient:
                     source_key="a2",
                     station_id=station_a.id,
                     rfid_user_id=card_a2.id,
-                    start_time=datetime(2026, 6, 5, 18, 0, tzinfo=timezone.utc),
-                    end_time=datetime(2026, 6, 5, 19, 0, tzinfo=timezone.utc),
+                    start_time=datetime(2026, 6, 5, 18, 0, tzinfo=UTC),
+                    end_time=datetime(2026, 6, 5, 19, 0, tzinfo=UTC),
                     energy_wh=4000,
                     total_minutes=60,
                     charging_minutes=60,
@@ -111,8 +111,8 @@ def _build_client() -> TestClient:
                     source_key="a3",
                     station_id=station_a.id,
                     rfid_user_id=card_unassigned.id,
-                    start_time=datetime(2026, 6, 7, 12, 0, tzinfo=timezone.utc),
-                    end_time=datetime(2026, 6, 7, 13, 0, tzinfo=timezone.utc),
+                    start_time=datetime(2026, 6, 7, 12, 0, tzinfo=UTC),
+                    end_time=datetime(2026, 6, 7, 13, 0, tzinfo=UTC),
                     energy_wh=3000,
                     total_minutes=60,
                     charging_minutes=50,
@@ -124,8 +124,8 @@ def _build_client() -> TestClient:
                     source_key="b1",
                     station_id=station_b.id,
                     rfid_user_id=card_b1.id,
-                    start_time=datetime(2026, 6, 3, 8, 0, tzinfo=timezone.utc),
-                    end_time=datetime(2026, 6, 3, 9, 0, tzinfo=timezone.utc),
+                    start_time=datetime(2026, 6, 3, 8, 0, tzinfo=UTC),
+                    end_time=datetime(2026, 6, 3, 9, 0, tzinfo=UTC),
                     energy_wh=9000,
                     total_minutes=60,
                     charging_minutes=60,
@@ -468,7 +468,6 @@ def test_partial_payments_status_append_only_reminder_and_reconciliation() -> No
     generated = client.post(f"/api/v1/admin/billing/periods/{period_id}/generate", headers=admin_a_headers)
     assert generated.status_code == 200
     resident1_statement_id = next(s["id"] for s in generated.json()["statements"] if s["resident_username"] == "resident_a1")
-    resident2_statement_id = next(s["id"] for s in generated.json()["statements"] if s["resident_username"] == "resident_a2")
 
     resident_forbidden = client.post(
         f"/api/v1/admin/billing/statements/{resident1_statement_id}/payments",

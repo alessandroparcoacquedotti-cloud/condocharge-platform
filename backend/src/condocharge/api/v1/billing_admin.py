@@ -167,9 +167,7 @@ def _payment_in_received_range(
     received_at = _normalize_utc(payment.received_at)
     if normalized_received_from is not None and (received_at is None or received_at < normalized_received_from):
         return False
-    if normalized_received_to is not None and (received_at is None or received_at > normalized_received_to):
-        return False
-    return True
+    return normalized_received_to is None or (received_at is not None and received_at <= normalized_received_to)
 
 
 def _to_statement_response(statement: ResidentBillingStatement) -> BillingStatementResponse:

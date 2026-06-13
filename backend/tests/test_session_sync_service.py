@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -57,8 +57,8 @@ def test_sync_rolls_back_failed_host_and_continues_next_host() -> None:
                 "192.168.1.200": RuntimeError("station offline"),
                 "192.168.1.201": [
                     LegrandChargingSession(
-                        start_time=datetime(2026, 6, 1, 8, 0, tzinfo=timezone.utc),
-                        end_time=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+                        start_time=datetime(2026, 6, 1, 8, 0, tzinfo=UTC),
+                        end_time=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
                         energy_wh=5000,
                         total_minutes=60,
                         charging_minutes=55,
@@ -106,8 +106,8 @@ def test_sync_duplicate_insert_fallback_keeps_host_progress() -> None:
             source_key="duplicate-source",
             station_id=station.id,
             rfid_user_id=None,
-            start_time=datetime(2026, 6, 1, 8, 0, tzinfo=timezone.utc),
-            end_time=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+            start_time=datetime(2026, 6, 1, 8, 0, tzinfo=UTC),
+            end_time=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
             energy_wh=5000,
             total_minutes=60,
             charging_minutes=55,
@@ -121,8 +121,8 @@ def test_sync_duplicate_insert_fallback_keeps_host_progress() -> None:
             {
                 "192.168.1.200": [
                     LegrandChargingSession(
-                        start_time=datetime(2026, 6, 1, 8, 0, tzinfo=timezone.utc),
-                        end_time=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+                        start_time=datetime(2026, 6, 1, 8, 0, tzinfo=UTC),
+                        end_time=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
                         energy_wh=5000,
                         total_minutes=60,
                         charging_minutes=55,
@@ -130,8 +130,8 @@ def test_sync_duplicate_insert_fallback_keeps_host_progress() -> None:
                         plug_type="Type2",
                     ),
                     LegrandChargingSession(
-                        start_time=datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc),
-                        end_time=datetime(2026, 6, 1, 11, 0, tzinfo=timezone.utc),
+                        start_time=datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+                        end_time=datetime(2026, 6, 1, 11, 0, tzinfo=UTC),
                         energy_wh=4000,
                         total_minutes=60,
                         charging_minutes=50,

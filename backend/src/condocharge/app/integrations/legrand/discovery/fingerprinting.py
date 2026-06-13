@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from condocharge.app.integrations.legrand.discovery.models import (
@@ -14,7 +14,7 @@ from condocharge.app.integrations.legrand.discovery.models import (
 @dataclass(frozen=True)
 class FingerprintRule:
     candidate: ProtocolCandidate
-    predicate: callable[[ProbeObservation], bool]
+    predicate: Callable[[ProbeObservation], bool]
     evidence: str
     weight: float
 

@@ -11,9 +11,9 @@ import base64
 import hashlib
 import os
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision = "0002"
 down_revision = "0001"
@@ -25,7 +25,7 @@ def _hash_password(password: str) -> str:
     iterations = 260_000
     salt = os.urandom(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-    return "pbkdf2_sha256$%d$%s$%s" % (
+    return "pbkdf2_sha256${}${}${}".format(
         iterations,
         base64.b64encode(salt).decode("ascii"),
         base64.b64encode(digest).decode("ascii"),

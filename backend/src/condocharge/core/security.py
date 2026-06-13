@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import os
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import jwt
 from pydantic import BaseModel
@@ -64,7 +65,7 @@ def create_access_token(
         "ver": token_version,
         "exp": int(expire.timestamp()),
     }
-    return jwt.encode(payload, secret_key, algorithm=algorithm)
+    return cast(str, jwt.encode(payload, secret_key, algorithm=algorithm))
 
 
 def decode_access_token(*, token: str, secret_key: str, algorithm: str) -> TokenPayload:
