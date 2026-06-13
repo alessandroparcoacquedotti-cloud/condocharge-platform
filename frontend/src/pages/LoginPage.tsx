@@ -1,0 +1,77 @@
+import { FormEvent, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "../shared/auth/AuthProvider";
+import { env } from "../shared/config/env";
+import { ErrorState } from "../shared/ui";
+
+export default function LoginPage() {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const next = searchParams.get("next") ?? "/";
+
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canSubmit = useMemo(() => username.trim() && password, [username, password]);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const defaultCondominium = env.defaultCondominiumName.trim();
+      await auth.login({
+        username: username.trim(),
+        password,
+        condominium: defaultCondominium ? defaultCondominium : undefined,
+      });
+      navigate(next, { replace: true });
+    } catch (err) {
+      const message = typeof err === "object" && err && "message" in err ? String((err as any).message) : "Login failed";
+      setError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="auth-wrap">
+      <div className="auth-card card">
+        <div className="auth-title">CondoCharge</div>
+        <div className="auth-subtitle muted">Accedi per visualizzare i dati di ricarica</div>
+
+        {error ? <ErrorState title="Accesso non riuscito" message={error} /> : null}
+
+        <form className="auth-form" onSubmit={onSubmit}>
+          <label className="auth-label">
+            Nome utente
+            <input
+              className="auth-input"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              required
+            />
+          </label>
+          <label className="auth-label">
+            Password
+            <input
+              className="auth-input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              autoComplete="current-password"
+              required
+            />
+          </label>
+          <button className="btn auth-submit" type="submit" disabled={!canSubmit || submitting}>
+            {submitting ? "Accesso in corso…" : "Accedi"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
