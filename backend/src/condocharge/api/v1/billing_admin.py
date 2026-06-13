@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import csv
 import io
-from decimal import Decimal
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import Annotated
 
-from datetime import datetime, timedelta, timezone
-
-from fastapi import APIRouter, BackgroundTasks, Body, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    File,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
@@ -26,47 +36,43 @@ from condocharge.core.config import get_settings
 from condocharge.models.billing import (
     BillingEmailNotification,
     BillingPayment,
+    BillingPaymentEvent,
     BillingPaymentImportJob,
     BillingPaymentImportRow,
-    BillingPaymentEvent,
     BillingPeriod,
     BillingUnmatchedPayment,
     ResidentBillingStatement,
 )
 from condocharge.schemas.billing import (
     BillingEmailNotificationResponse,
+    BillingPaymentEventResponse,
     BillingPaymentImportJobDetailResponse,
     BillingPaymentImportJobSummaryResponse,
     BillingPaymentImportRowResponse,
-    BillingReminderRuleResponse,
-    BillingPaymentEventResponse,
     BillingPaymentResponse,
     BillingPeriodDetailResponse,
     BillingPeriodResponse,
+    BillingReminderRuleResponse,
     BillingStatementDetailResponse,
     BillingStatementResponse,
-    EmailAttachmentResponse,
+    BillingUnmatchedPaymentResponse,
     CreateBillingPaymentRequest,
     CreateBillingPeriodRequest,
-    EmailHealthResponse,
+    EmailAttachmentResponse,
     IgnoreUnmatchedPaymentRequest,
     MatchUnmatchedPaymentRequest,
     PaymentImportResultResponse,
+    ReceiptPayloadResponse,
     ReconciliationResponse,
     ReconciliationRow,
-    ReceiptPayloadResponse,
-    StatementPayloadResponse,
     ReminderPayloadResponse,
     ReminderRunResponse,
     SettlementSummaryResponse,
-    TestEmailRequest,
-    TestEmailResponse,
+    StatementPayloadResponse,
     UpdateBillingReminderRuleRequest,
     UpdateStatementPaymentStatusRequest,
     WaiveStatementRequest,
-    BillingUnmatchedPaymentResponse,
 )
-
 
 router = APIRouter(prefix="/admin/billing", tags=["admin-billing"])
 MAX_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024
@@ -103,8 +109,8 @@ def _normalize_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _to_statement_response(statement: ResidentBillingStatement) -> BillingStatementResponse:
@@ -397,7 +403,7 @@ def _deliver_statement_email(
             body_preview=template.text_body,
             status="sent",
             created_by_app_user_id=admin_user.id,
-            sent_at=datetime.now(tz=timezone.utc),
+            sent_at=datetime.now(tz=UTC),
             retry_of_notification_id=retry_of_notification_id,
         )
         return _EmailDeliveryResult(notification=notification, attachment_metadata=attachment_metadata)
@@ -678,7 +684,7 @@ def update_reminder_rule(db: DbSession, admin_user: AdminUser, body: UpdateBilli
 )
 def reminder_candidates(db: DbSession, admin_user: AdminUser) -> list[BillingStatementResponse]:
     service = BillingService(db=db)
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     candidates = service.reminder_candidates(condominium_id=admin_user.condominium_id, now=now)
     return [_to_statement_response(statement) for statement in candidates]
 
@@ -690,7 +696,7 @@ def reminder_candidates(db: DbSession, admin_user: AdminUser) -> list[BillingSta
 )
 def run_reminders(db: DbSession, admin_user: AdminUser) -> ReminderRunResponse:
     service = BillingService(db=db)
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     rule = service.get_or_create_reminder_rule(condominium_id=admin_user.condominium_id)
     candidates = service.reminder_candidates(condominium_id=admin_user.condominium_id, now=now)
     candidates_count = len(candidates)
@@ -706,10 +712,10 @@ def run_reminders(db: DbSession, admin_user: AdminUser) -> ReminderRunResponse:
             continue
         if statement.last_reminder_at is not None:
             last = _normalize_utc(statement.last_reminder_at)
-            if last is not None and _normalize_utc(now) is not None:
-                if _normalize_utc(now) < last + timedelta(days=int(rule.repeat_every_days)):
-                    skipped_count += 1
-                    continue
+            now_utc = _normalize_utc(now)
+            if last is not None and now_utc is not None and now_utc < last + timedelta(days=int(rule.repeat_every_days)):
+                skipped_count += 1
+                continue
 
         statement = service.create_reminder_metadata(condominium_id=admin_user.condominium_id, statement_id=statement.id)
         try:
@@ -745,13 +751,13 @@ def run_reminders(db: DbSession, admin_user: AdminUser) -> ReminderRunResponse:
 def reconciliation(
     db: DbSession,
     admin_user: AdminUser,
-    period_id: int | None = Query(default=None),
-    resident_id: int | None = Query(default=None),
-    payment_status: str | None = Query(default=None),
-    from_date: datetime | None = Query(default=None),
-    to_date: datetime | None = Query(default=None),
-    received_from_date: datetime | None = Query(default=None),
-    received_to_date: datetime | None = Query(default=None),
+    period_id: Annotated[int | None, Query()] = None,
+    resident_id: Annotated[int | None, Query()] = None,
+    payment_status: Annotated[str | None, Query()] = None,
+    from_date: Annotated[datetime | None, Query()] = None,
+    to_date: Annotated[datetime | None, Query()] = None,
+    received_from_date: Annotated[datetime | None, Query()] = None,
+    received_to_date: Annotated[datetime | None, Query()] = None,
 ) -> ReconciliationResponse:
     service = BillingService(db=db)
     normalized_received_from = _normalize_utc(received_from_date)
@@ -909,7 +915,7 @@ def import_payments_csv(
     admin_user: AdminUser,
     background_tasks: BackgroundTasks,
     csv_body: str = Body(..., media_type="text/csv"),
-    async_mode: bool = Query(default=False),
+    async_mode: Annotated[bool, Query()] = False,
 ) -> PaymentImportResultResponse:
     if not csv_body.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV body is empty")
@@ -964,8 +970,8 @@ async def import_payments_upload(
     db: DbSession,
     admin_user: AdminUser,
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    async_mode: bool = Query(default=False),
+    file: Annotated[UploadFile, File(...)],
+    async_mode: Annotated[bool, Query()] = False,
 ) -> PaymentImportResultResponse:
     raw_bytes = await file.read()
     csv_text = _decode_csv_upload(upload=file, raw_bytes=raw_bytes)

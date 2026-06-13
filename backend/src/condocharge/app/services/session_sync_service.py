@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from condocharge.app.integrations.legrand.driver import (
     ChargingSession as LegrandChargingSession,
+)
+from condocharge.app.integrations.legrand.driver import (
     LegrandGreenUpDriver,
 )
 from condocharge.app.services.resident_notification_service import ResidentNotificationService
@@ -71,7 +73,7 @@ class SessionSyncService:
                 if station is not None:
                     station.status = "offline"
                     station.status_source = "last_sync"
-                    station.last_sync_at = datetime.now(tz=timezone.utc)
+                    station.last_sync_at = datetime.now(tz=UTC)
                     self._db.commit()
                 result.errors.append(f"{host}: {type(exc).__name__}: {exc}")
         result.total_sessions = (
@@ -129,7 +131,11 @@ class SessionSyncService:
 
                 existing = self._find_existing_session(source_key=source_key, station_id=station.id, session=s)
                 if existing is None:
-                    raise IntegrityError("Duplicate session insert failed without a persisted matching row", params=None, orig=None)
+                    raise IntegrityError(
+                        "Duplicate session insert failed without a persisted matching row",
+                        params=None,
+                        orig=RuntimeError("Matching session row not found after duplicate insert"),
+                    )
                 continue
 
             changed = self._apply_updates(existing, s, station_id=station.id, rfid_user_id=rfid_user.id if rfid_user else None)
@@ -140,7 +146,7 @@ class SessionSyncService:
         self._notify_inserted_sessions(inserted_sessions=inserted_sessions, result=result)
         station.status = "online"
         station.status_source = "last_sync"
-        station.last_sync_at = datetime.now(tz=timezone.utc)
+        station.last_sync_at = datetime.now(tz=UTC)
         self._db.commit()
 
     def _get_or_create_station(self, *, condominium_id: int, host: str) -> ChargingStation:

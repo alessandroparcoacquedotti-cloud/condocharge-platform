@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import not_, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -24,7 +24,6 @@ from condocharge.models.tenancy import (
     ResidentEmailNotification,
     ResidentNotificationPreferences,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +217,7 @@ class ResidentNotificationService:
         if existing is not None:
             return None
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         if not self._email_service.enabled:
             logger.info(
                 "Preview resident notification type=%s condo=%s resident=%s dedupe_key=%s subject=%s",
@@ -373,7 +372,7 @@ class ResidentNotificationService:
         )
 
     def _is_recent(self, end_time: datetime) -> bool:
-        return self._as_utc(end_time) >= datetime.now(tz=timezone.utc) - timedelta(
+        return self._as_utc(end_time) >= datetime.now(tz=UTC) - timedelta(
             minutes=self._settings.notification_recency_minutes
         )
 
@@ -402,8 +401,8 @@ class ResidentNotificationService:
     @staticmethod
     def _as_utc(value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
 
 class StationAvailabilityNotificationPoller:

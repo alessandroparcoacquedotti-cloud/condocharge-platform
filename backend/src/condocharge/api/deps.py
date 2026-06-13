@@ -14,12 +14,13 @@ from condocharge.models.tenancy import AppUser, AppUserRole
 DbSession = Annotated[Session, Depends(get_db_session)]
 
 _bearer = HTTPBearer(auto_error=False)
+BearerCredentials = Annotated[HTTPAuthorizationCredentials | None, Security(_bearer)]
 
 
 def get_current_user(
     db: DbSession,
     request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+    credentials: BearerCredentials,
 ) -> AppUser:
     if credentials is None or not credentials.credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")

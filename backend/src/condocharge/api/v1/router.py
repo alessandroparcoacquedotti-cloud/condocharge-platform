@@ -14,7 +14,6 @@ from condocharge.api.v1.sessions import router as sessions_router
 from condocharge.api.v1.stations import router as stations_router
 from condocharge.api.v1.users import router as users_router
 
-
 router = APIRouter(prefix="/v1")
 router.include_router(auth_router)
 router.include_router(admin_router)

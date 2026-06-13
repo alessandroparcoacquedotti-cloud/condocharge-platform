@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-import base64
 import argparse
+import base64
 import json
 import sys
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-from mitmproxy import ctx
-from mitmproxy import http
+from mitmproxy import ctx, http
 from mitmproxy.options import Options
 from mitmproxy.tools.dump import DumpMaster
-
 
 DEFAULT_HOSTS = {"192.168.1.200", "192.168.1.201"}
 
@@ -130,7 +128,7 @@ class LegrandCaptureProxy:
 
         max_bytes = int(ctx.options.legrand_capture_max_bytes)
         captured = CapturedFlow(
-            captured_at=datetime.now(tz=timezone.utc).isoformat(),
+            captured_at=datetime.now(tz=UTC).isoformat(),
             request=CapturedRequest(
                 method=req.method,
                 url=req.url,
@@ -195,7 +193,7 @@ class LegrandCaptureProxy:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         payload: dict[str, Any] = {
-            "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+            "generated_at": datetime.now(tz=UTC).isoformat(),
             "hosts": self._hosts(),
             "max_bytes": int(ctx.options.legrand_capture_max_bytes),
             "flows": [asdict(f) for f in self._flows],

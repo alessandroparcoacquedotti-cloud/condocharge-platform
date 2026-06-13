@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 
-from condocharge.app.integrations.base.models import StationStatusSnapshot, StationTarget, StationTelemetryPoint
+from condocharge.app.integrations.base.models import (
+    StationStatusSnapshot,
+    StationTarget,
+    StationTelemetryPoint,
+)
 from condocharge.app.integrations.drivers.registry import DriverRegistry
 
 
@@ -44,7 +48,7 @@ class StationPollingService:
         self._telemetry_sink = telemetry_sink
 
     def poll_once(self, *, now: datetime | None = None) -> PollingOutcome:
-        started_at = now or datetime.now(tz=timezone.utc)
+        started_at = now or datetime.now(tz=UTC)
         polled = 0
         failed = 0
 
@@ -59,7 +63,7 @@ class StationPollingService:
             except Exception:
                 failed += 1
 
-        finished_at = datetime.now(tz=timezone.utc)
+        finished_at = datetime.now(tz=UTC)
         return PollingOutcome(
             started_at=started_at,
             finished_at=finished_at,
@@ -69,6 +73,4 @@ class StationPollingService:
 
     @staticmethod
     def _safe_targets(targets: Iterable[StationTarget]) -> Iterable[StationTarget]:
-        for t in targets:
-            yield t
-
+        yield from targets

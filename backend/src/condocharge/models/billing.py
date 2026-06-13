@@ -34,7 +34,7 @@ class BillingPeriod(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    statements: Mapped[list["ResidentBillingStatement"]] = relationship(
+    statements: Mapped[list[ResidentBillingStatement]] = relationship(
         back_populates="billing_period",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -73,27 +73,27 @@ class ResidentBillingStatement(Base):
 
     billing_period: Mapped[BillingPeriod] = relationship(back_populates="statements")
     resident: Mapped[object] = relationship("AppUser", back_populates="billing_statements")
-    session_links: Mapped[list["ResidentBillingStatementSession"]] = relationship(
+    session_links: Mapped[list[ResidentBillingStatementSession]] = relationship(
         back_populates="statement",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    payment_events: Mapped[list["BillingPaymentEvent"]] = relationship(
+    payment_events: Mapped[list[BillingPaymentEvent]] = relationship(
         back_populates="statement",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    payments: Mapped[list["BillingPayment"]] = relationship(
+    payments: Mapped[list[BillingPayment]] = relationship(
         back_populates="statement",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    email_notifications: Mapped[list["BillingEmailNotification"]] = relationship(
+    email_notifications: Mapped[list[BillingEmailNotification]] = relationship(
         back_populates="statement",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    import_rows: Mapped[list["BillingPaymentImportRow"]] = relationship(
+    import_rows: Mapped[list[BillingPaymentImportRow]] = relationship(
         back_populates="matched_statement",
         passive_deletes=True,
     )
@@ -209,7 +209,7 @@ class BillingEmailNotification(Base):
 
     statement: Mapped[ResidentBillingStatement] = relationship(back_populates="email_notifications")
     created_by_user: Mapped[object] = relationship("AppUser")
-    retry_of_notification: Mapped["BillingEmailNotification | None"] = relationship(remote_side="BillingEmailNotification.id")
+    retry_of_notification: Mapped[BillingEmailNotification | None] = relationship(remote_side="BillingEmailNotification.id")
 
 
 class BillingUnmatchedPayment(Base):
@@ -239,7 +239,7 @@ class BillingUnmatchedPayment(Base):
 
     condominium: Mapped[object] = relationship("Condominium")
     matched_statement: Mapped[object] = relationship("ResidentBillingStatement")
-    import_rows: Mapped[list["BillingPaymentImportRow"]] = relationship(
+    import_rows: Mapped[list[BillingPaymentImportRow]] = relationship(
         back_populates="unmatched_payment",
         passive_deletes=True,
     )
@@ -276,7 +276,7 @@ class BillingPaymentImportJob(Base):
 
     condominium: Mapped[object] = relationship("Condominium")
     created_by_user: Mapped[object] = relationship("AppUser")
-    rows: Mapped[list["BillingPaymentImportRow"]] = relationship(
+    rows: Mapped[list[BillingPaymentImportRow]] = relationship(
         back_populates="import_job",
         cascade="all, delete-orphan",
         passive_deletes=True,

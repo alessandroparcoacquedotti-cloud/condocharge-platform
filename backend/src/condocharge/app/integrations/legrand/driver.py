@@ -4,10 +4,10 @@ import csv
 import random
 import re
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Callable, Final
+from datetime import UTC, datetime
+from typing import Any, Final
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
@@ -77,7 +77,7 @@ class _Credentials:
 
 
 def _js_timezone_offset_minutes(now: datetime | None = None) -> int:
-    base = now if now is not None else datetime.now(tz=timezone.utc)
+    base = now if now is not None else datetime.now(tz=UTC)
     local_now = base.astimezone(ZoneInfo("Europe/Rome"))
     offset = local_now.utcoffset()
     if offset is None:
@@ -195,7 +195,7 @@ class LegrandGreenUpDriver:
         return target.vendor == StationVendor.LEGRAND_GREENUP
 
     def get_status(self, target: StationTarget) -> StationStatusSnapshot:
-        observed_at = datetime.now(tz=timezone.utc)
+        observed_at = datetime.now(tz=UTC)
         status = self.get_station_status(target.host)
         availability = StationAvailability.ONLINE
         connectors = [
@@ -210,7 +210,7 @@ class LegrandGreenUpDriver:
         )
 
     def get_telemetry(self, target: StationTarget) -> Sequence[StationTelemetryPoint]:
-        observed_at = datetime.now(tz=timezone.utc)
+        observed_at = datetime.now(tz=UTC)
         status = self.get_station_status(target.host)
         power_kw = status.instantaneous_power_kva
         return [
@@ -235,7 +235,7 @@ class LegrandGreenUpDriver:
 
         self._request_with_retries(client, "GET", f"{base_url}/")
 
-        now_utc = datetime.now(tz=timezone.utc)
+        now_utc = datetime.now(tz=UTC)
         data = {
             "timeZone": str(_js_timezone_offset_minutes()),
             "year": str(now_utc.year),
@@ -294,9 +294,8 @@ class LegrandGreenUpDriver:
             headers={"Accept": "text/csv,*/*;q=0.9"},
         )
         content_type = response.headers.get("Content-Type", "")
-        if "text/csv" not in content_type.lower():
-            if _looks_like_login_page(response.text):
-                raise LegrandGreenUpAuthenticationError("Not authenticated for CSV download")
+        if "text/csv" not in content_type.lower() and _looks_like_login_page(response.text):
+            raise LegrandGreenUpAuthenticationError("Not authenticated for CSV download")
         return response.content
 
     def parse_charge_session_csv(self, csv_content: bytes) -> list[ChargingSession]:

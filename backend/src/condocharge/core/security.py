@@ -4,7 +4,7 @@ import base64
 import hashlib
 import hmac
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from pydantic import BaseModel
@@ -22,10 +22,10 @@ def hash_password(password: str) -> str:
     iterations = 260_000
     salt = os.urandom(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
-    return "pbkdf2_sha256$%d$%s$%s" % (
-        iterations,
-        base64.b64encode(salt).decode("ascii"),
-        base64.b64encode(digest).decode("ascii"),
+    return "pbkdf2_sha256${iterations}${salt_b64}${digest_b64}".format(
+        iterations=iterations,
+        salt_b64=base64.b64encode(salt).decode("ascii"),
+        digest_b64=base64.b64encode(digest).decode("ascii"),
     )
 
 
@@ -56,7 +56,7 @@ def create_access_token(
     algorithm: str,
     expires_minutes: int,
 ) -> str:
-    expire = datetime.now(tz=timezone.utc) + timedelta(minutes=expires_minutes)
+    expire = datetime.now(tz=UTC) + timedelta(minutes=expires_minutes)
     payload = {
         "sub": str(user_id),
         "condominium_id": condominium_id,

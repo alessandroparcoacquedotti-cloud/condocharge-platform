@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, joinedload
 
-from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
+from condocharge.models.charging import ChargingSession
 from condocharge.schemas.api import (
     PaginationMeta,
-    RfidUserRef,
     ResidentSessionResponse,
     ResidentStationRef,
+    RfidUserRef,
     SessionResponse,
     StationRef,
 )
@@ -19,8 +20,8 @@ from condocharge.schemas.api import (
 def paginate[T](
     db: Session,
     *,
-    base_count_from: Select[tuple[object]],
-    query,
+    base_count_from: Select[Any],
+    query: Select[tuple[T]],
     limit: int,
     offset: int,
 ) -> tuple[Sequence[T], PaginationMeta]:
@@ -89,7 +90,7 @@ def build_resident_session_response(row: ChargingSession) -> ResidentSessionResp
     )
 
 
-def session_detail_query():
+def session_detail_query() -> Select[tuple[ChargingSession]]:
     return select(ChargingSession).options(
         joinedload(ChargingSession.station),
         joinedload(ChargingSession.rfid_user),

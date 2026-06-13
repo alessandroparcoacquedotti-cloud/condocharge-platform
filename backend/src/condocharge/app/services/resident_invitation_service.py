@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,7 +13,6 @@ from condocharge.app.services.email_templates import build_resident_invitation_e
 from condocharge.core.config import Settings
 from condocharge.core.security import hash_password
 from condocharge.models.tenancy import AppUser, Condominium, ResidentInvitationToken
-
 
 INVITATION_EXPIRY_HOURS = 72
 
@@ -68,7 +67,7 @@ class ResidentInvitationService:
             raise InvitationError("CONDOCHARGE_PUBLIC_URL must be configured before sending invitations")
 
         token = secrets.token_urlsafe(32)
-        expires_at = datetime.now(tz=timezone.utc) + timedelta(hours=INVITATION_EXPIRY_HOURS)
+        expires_at = datetime.now(tz=UTC) + timedelta(hours=INVITATION_EXPIRY_HOURS)
         invitation = ResidentInvitationToken(
             app_user_id=resident.id,
             token_hash=self._hash_token(token),
@@ -98,7 +97,7 @@ class ResidentInvitationService:
         return InvitationIssueResult(token=token, invitation=invitation, expires_at=expires_at)
 
     def get_invitation(self, *, token: str) -> InvitationLookupResult:
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         invitation = self._db.scalar(
             select(ResidentInvitationToken)
             .where(ResidentInvitationToken.token_hash == self._hash_token(token))
@@ -152,7 +151,7 @@ class ResidentInvitationService:
         lookup.resident.token_version = int(getattr(lookup.resident, "token_version", 0) or 0) + 1
         if not lookup.resident.is_active:
             lookup.resident.is_active = 1
-        lookup.invitation.used_at = datetime.now(tz=timezone.utc)
+        lookup.invitation.used_at = datetime.now(tz=UTC)
         self._db.commit()
         self._db.refresh(lookup.resident)
         self._db.refresh(lookup.invitation)
@@ -165,8 +164,8 @@ class ResidentInvitationService:
     @staticmethod
     def _as_utc(value: datetime) -> datetime:
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     @classmethod
     def _resident_was_disabled_after_invitation(cls, *, resident: AppUser, invitation: ResidentInvitationToken) -> bool:

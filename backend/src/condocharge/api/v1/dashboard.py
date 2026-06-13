@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Query
 from sqlalchemy import func, select
@@ -9,7 +10,6 @@ from condocharge.api.deps import DbSession, NonResidentUser
 from condocharge.api.v1._helpers import build_session_response, session_detail_query
 from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
 from condocharge.schemas.api import DashboardSummaryResponse, TopUserByEnergyResponse
-
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -23,8 +23,8 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 def get_dashboard_summary(
     db: DbSession,
     current_user: NonResidentUser,
-    from_date: datetime | None = Query(default=None, description="Filter sessions starting on or after this ISO datetime"),
-    to_date: datetime | None = Query(default=None, description="Filter sessions ending on or before this ISO datetime"),
+    from_date: Annotated[datetime | None, Query(description="Filter sessions starting on or after this ISO datetime")] = None,
+    to_date: Annotated[datetime | None, Query(description="Filter sessions ending on or before this ISO datetime")] = None,
 ) -> DashboardSummaryResponse:
     condo_id = current_user.condominium_id
     session_filter = []

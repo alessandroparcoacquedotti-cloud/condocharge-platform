@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 
 from condocharge.api.deps import CurrentUser, DbSession
-from condocharge.api.v1._helpers import build_resident_session_response, paginate, session_detail_query
+from condocharge.api.v1._helpers import (
+    build_resident_session_response,
+    paginate,
+    session_detail_query,
+)
 from condocharge.api.v1.stations import _resolve_legrand_credentials, _stations_live_occupancy
 from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
-from condocharge.models.tenancy import ResidentNotificationPreferences
-from condocharge.models.tenancy import Condominium
+from condocharge.models.tenancy import Condominium, ResidentNotificationPreferences
 from condocharge.schemas.api import (
     ResidentSessionListResponse,
     ResidentStationLastCharge,
@@ -30,7 +34,6 @@ from condocharge.schemas.consumption import (
     UpdateResidentProfileRequest,
 )
 
-
 router = APIRouter(prefix="/resident", tags=["resident"])
 
 
@@ -47,8 +50,8 @@ def _require_resident(user: CurrentUser) -> None:
 def resident_summary(
     db: DbSession,
     current_user: CurrentUser,
-    from_date: datetime | None = Query(default=None),
-    to_date: datetime | None = Query(default=None),
+    from_date: Annotated[datetime | None, Query()] = None,
+    to_date: Annotated[datetime | None, Query()] = None,
 ) -> ResidentSummaryResponse:
     _require_resident(current_user)
 
@@ -148,10 +151,10 @@ def resident_summary(
 def resident_sessions(
     db: DbSession,
     current_user: CurrentUser,
-    from_date: datetime | None = Query(default=None),
-    to_date: datetime | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+    from_date: Annotated[datetime | None, Query()] = None,
+    to_date: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> ResidentSessionListResponse:
     _require_resident(current_user)
 

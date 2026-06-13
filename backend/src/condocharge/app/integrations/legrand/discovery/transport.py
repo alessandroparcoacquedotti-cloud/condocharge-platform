@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from condocharge.app.integrations.legrand.discovery.models import ProbeRequest, ProbeTarget, ResponseSnapshot
+from condocharge.app.integrations.legrand.discovery.models import (
+    ProbeRequest,
+    ProbeTarget,
+    ResponseSnapshot,
+)
 
 
 class DiscoveryTransport(Protocol):

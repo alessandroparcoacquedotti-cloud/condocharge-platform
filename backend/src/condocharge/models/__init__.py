@@ -1,9 +1,9 @@
 from condocharge.models.billing import (
     BillingEmailNotification,
     BillingPayment,
+    BillingPaymentEvent,
     BillingPaymentImportJob,
     BillingPaymentImportRow,
-    BillingPaymentEvent,
     BillingPeriod,
     BillingReminderRule,
     BillingUnmatchedPayment,
@@ -11,7 +11,13 @@ from condocharge.models.billing import (
     ResidentBillingStatementSession,
 )
 from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
-from condocharge.models.tenancy import AppUser, AppUserRole, Condominium, ResidentEmailNotification, ResidentInvitationToken
+from condocharge.models.tenancy import (
+    AppUser,
+    AppUserRole,
+    Condominium,
+    ResidentEmailNotification,
+    ResidentInvitationToken,
+)
 
 __all__ = [
     "AppUser",

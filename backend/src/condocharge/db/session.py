@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
-import sqlite3
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine, make_url
@@ -19,11 +19,9 @@ def _resolve_sqlite_database_url(database_url: str) -> tuple[str, str | None]:
         return database_url, None
 
     raw_path = url.database
+    assert raw_path is not None
     path = Path(raw_path)
-    if not path.is_absolute():
-        path = (Path.cwd() / path).resolve()
-    else:
-        path = path.resolve()
+    path = (Path.cwd() / path).resolve() if not path.is_absolute() else path.resolve()
 
     resolved = str(url.set(database=path.as_posix()))
     return resolved, str(path)

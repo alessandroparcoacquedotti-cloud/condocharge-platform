@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import smtplib
+from dataclasses import dataclass
 from email.message import EmailMessage
 
 from condocharge.core.config import Settings

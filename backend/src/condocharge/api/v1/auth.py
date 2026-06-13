@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import func, select
 
 from condocharge.api.deps import CurrentUser, DbSession
-from condocharge.app.services.resident_invitation_service import InvitationError, ResidentInvitationService
+from condocharge.app.services.resident_invitation_service import (
+    InvitationError,
+    ResidentInvitationService,
+)
 from condocharge.core.config import get_settings
 from condocharge.core.rate_limit import (
     RateLimitRule,
@@ -27,7 +30,6 @@ from condocharge.schemas.auth import (
     LoginResponse,
     TokenResponse,
 )
-
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -139,7 +141,7 @@ def login(request: Request, db: DbSession, body: LoginRequest) -> LoginResponse:
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    user.last_login_at = datetime.now(tz=timezone.utc)
+    user.last_login_at = datetime.now(tz=UTC)
     db.commit()
 
     settings = get_settings()

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from collections.abc import Sequence
 import csv
 import io
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from collections import defaultdict
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -14,18 +14,17 @@ from sqlalchemy.orm import Session, joinedload
 from condocharge.models.billing import (
     BillingEmailNotification,
     BillingPayment,
+    BillingPaymentEvent,
     BillingPaymentImportJob,
     BillingPaymentImportRow,
-    BillingPaymentEvent,
     BillingPeriod,
     BillingReminderRule,
     BillingUnmatchedPayment,
     ResidentBillingStatement,
     ResidentBillingStatementSession,
 )
-from condocharge.models.charging import ChargingSession, RfidUser
+from condocharge.models.charging import ChargingSession
 from condocharge.models.tenancy import AppUser, AppUserRole, Condominium
-
 
 THREE_DP = Decimal("0.001")
 TWO_DP = Decimal("0.01")
@@ -35,8 +34,8 @@ def _normalize_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 class BillingService:
@@ -249,7 +248,7 @@ class BillingService:
             statement.paid_at = None
         else:
             statement.payment_status = "paid"
-            statement.paid_at = statement.paid_at or datetime.now(tz=timezone.utc)
+            statement.paid_at = statement.paid_at or datetime.now(tz=UTC)
 
     def create_period(
         self,
@@ -320,7 +319,7 @@ class BillingService:
 
             grouped[resident.id].append(session)
 
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         seen_resident_ids: set[int] = set()
         for resident_id, resident_sessions in grouped.items():
             seen_resident_ids.add(resident_id)
@@ -391,7 +390,7 @@ class BillingService:
             period = self.generate_period(condominium=condominium, period=period)
 
         period.status = "closed"
-        period.closed_at = datetime.now(tz=timezone.utc)
+        period.closed_at = datetime.now(tz=UTC)
         self._db.commit()
         return self.get_period_for_admin(condominium_id=condominium.id, period_id=period.id)
 
@@ -420,7 +419,7 @@ class BillingService:
         elif payment_status == "paid":
             statement.amount_paid_eur = Decimal(statement.amount_eur)
             statement.payment_status = "paid"
-            statement.paid_at = datetime.now(tz=timezone.utc)
+            statement.paid_at = datetime.now(tz=UTC)
         else:
             statement.payment_status = "waived"
             statement.amount_due_eur = Decimal("0")
@@ -527,7 +526,7 @@ class BillingService:
     ) -> ResidentBillingStatement:
         statement = self.get_statement_for_admin(condominium_id=condominium_id, statement_id=statement_id)
         statement.reminder_count = int(statement.reminder_count or 0) + 1
-        statement.last_reminder_at = datetime.now(tz=timezone.utc)
+        statement.last_reminder_at = datetime.now(tz=UTC)
         self._db.commit()
         return self.get_statement_for_admin(condominium_id=condominium_id, statement_id=statement.id)
 
@@ -641,7 +640,7 @@ class BillingService:
         job.rows_failed = rows_failed
         job.error_message = error_message
         if status in {"completed", "failed"}:
-            job.completed_at = datetime.now(tz=timezone.utc)
+            job.completed_at = datetime.now(tz=UTC)
         self._db.commit()
         return self.get_import_job_for_admin(condominium_id=condominium_id, job_id=job_id)
 
@@ -711,12 +710,14 @@ class BillingService:
         return unmatched
 
     def list_import_jobs(self, *, condominium_id: int) -> list[BillingPaymentImportJob]:
-        return self._db.scalars(
+        return list(
+            self._db.scalars(
             select(BillingPaymentImportJob)
             .options(joinedload(BillingPaymentImportJob.created_by_user))
             .where(BillingPaymentImportJob.condominium_id == condominium_id)
             .order_by(BillingPaymentImportJob.created_at.desc(), BillingPaymentImportJob.id.desc())
-        ).all()
+            ).all()
+        )
 
     def list_unmatched_payments(
         self,
@@ -733,7 +734,9 @@ class BillingService:
             query = query.where(BillingUnmatchedPayment.received_at <= received_to_date)
         if statuses:
             query = query.where(BillingUnmatchedPayment.status.in_(list(statuses)))
-        return self._db.scalars(query.order_by(BillingUnmatchedPayment.received_at.desc(), BillingUnmatchedPayment.id.desc())).all()
+        return list(
+            self._db.scalars(query.order_by(BillingUnmatchedPayment.received_at.desc(), BillingUnmatchedPayment.id.desc())).all()
+        )
 
     def match_unmatched_payment(
         self,
@@ -825,7 +828,10 @@ class BillingService:
             closed_at = statement.billing_period.closed_at
             if closed_at is None:
                 continue
-            eligible_after = _normalize_utc(closed_at) + timedelta(days=int(rule.days_after_period_close))
+            closed_at_utc = _normalize_utc(closed_at)
+            if closed_at_utc is None:
+                continue
+            eligible_after = closed_at_utc + timedelta(days=int(rule.days_after_period_close))
             now_utc = _normalize_utc(now)
             if now_utc is None:
                 continue
@@ -1100,7 +1106,9 @@ class BillingService:
         if to_date is not None:
             query = query.where(ResidentBillingStatement.generated_at <= to_date)
 
-        rows = self._db.execute(query.order_by(ResidentBillingStatement.generated_at.desc(), ResidentBillingStatement.id.desc())).unique().scalars().all()
+        rows = list(
+            self._db.execute(query.order_by(ResidentBillingStatement.generated_at.desc(), ResidentBillingStatement.id.desc())).unique().scalars().all()
+        )
         if received_from_date is None and received_to_date is None:
             return rows
         normalized_from = _normalize_utc(received_from_date)
@@ -1112,11 +1120,11 @@ class BillingService:
                 for payment in statement.payments
                 if (
                     normalized_from is None
-                    or _normalize_utc(payment.received_at) >= normalized_from
+                    or ((_normalize_utc(payment.received_at)) is not None and _normalize_utc(payment.received_at) >= normalized_from)
                 )
                 and (
                     normalized_to is None
-                    or _normalize_utc(payment.received_at) <= normalized_to
+                    or ((_normalize_utc(payment.received_at)) is not None and _normalize_utc(payment.received_at) <= normalized_to)
                 )
             ]
             if matching:

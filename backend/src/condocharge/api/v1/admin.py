@@ -4,8 +4,9 @@ import csv
 import io
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
@@ -15,7 +16,10 @@ from condocharge.api.deps import AdminUser, DbSession
 from condocharge.app.integrations.base.models import ConnectorStatus, StationTarget, StationVendor
 from condocharge.app.integrations.legrand.driver import LegrandGreenUpDriver
 from condocharge.app.services.email_service import EmailDeliveryError
-from condocharge.app.services.resident_invitation_service import InvitationError, ResidentInvitationService
+from condocharge.app.services.resident_invitation_service import (
+    InvitationError,
+    ResidentInvitationService,
+)
 from condocharge.app.services.session_sync_service import SessionSyncService
 from condocharge.core.config import get_settings
 from condocharge.core.security import hash_password
@@ -43,7 +47,6 @@ from condocharge.schemas.consumption import (
     UpdateAdminSettingsRequest,
     UpdateResidentRequest,
 )
-
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -152,8 +155,8 @@ def _as_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _resident_invitation_status(*, user: AppUser, latest_invitation: ResidentInvitationToken | None) -> tuple[str, datetime | None, datetime | None]:
@@ -167,7 +170,7 @@ def _resident_invitation_status(*, user: AppUser, latest_invitation: ResidentInv
         return "invitation_expired", None, None
     expires_at = _as_utc(latest_invitation.expires_at)
     created_at = _as_utc(latest_invitation.created_at)
-    if latest_invitation.used_at is None and expires_at and expires_at > datetime.now(tz=timezone.utc):
+    if latest_invitation.used_at is None and expires_at and expires_at > datetime.now(tz=UTC):
         return "invited", created_at, expires_at
     return "invitation_expired", created_at, expires_at
 
@@ -592,7 +595,7 @@ def poll_stations(db: DbSession, body: PollStationsRequest, admin_user: AdminUse
             except Exception as exc:
                 station.status = "offline"
                 station.status_source = "polling"
-                station.last_sync_at = datetime.now(tz=timezone.utc)
+                station.last_sync_at = datetime.now(tz=UTC)
                 station.active_session = False
                 station.active_session_source = "polling"
                 errors.append(f"{host}: {type(exc).__name__}: {exc}")
@@ -641,10 +644,10 @@ def assign_rfid_user(
 def admin_cost_report(
     db: DbSession,
     admin_user: AdminUser,
-    resident_id: int | None = Query(default=None),
-    rfid_user_id: int | None = Query(default=None),
-    from_date: datetime | None = Query(default=None),
-    to_date: datetime | None = Query(default=None),
+    resident_id: Annotated[int | None, Query()] = None,
+    rfid_user_id: Annotated[int | None, Query()] = None,
+    from_date: Annotated[datetime | None, Query()] = None,
+    to_date: Annotated[datetime | None, Query()] = None,
 ) -> AdminCostReportResponse:
     _validate_report_scope(db, admin_user=admin_user, resident_id=resident_id, rfid_user_id=rfid_user_id)
 
@@ -727,10 +730,10 @@ def admin_cost_report(
 def admin_cost_report_csv(
     db: DbSession,
     admin_user: AdminUser,
-    resident_id: int | None = Query(default=None),
-    rfid_user_id: int | None = Query(default=None),
-    from_date: datetime | None = Query(default=None),
-    to_date: datetime | None = Query(default=None),
+    resident_id: Annotated[int | None, Query()] = None,
+    rfid_user_id: Annotated[int | None, Query()] = None,
+    from_date: Annotated[datetime | None, Query()] = None,
+    to_date: Annotated[datetime | None, Query()] = None,
 ) -> Response:
     _validate_report_scope(db, admin_user=admin_user, resident_id=resident_id, rfid_user_id=rfid_user_id)
 

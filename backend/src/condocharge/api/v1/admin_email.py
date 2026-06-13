@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
 
@@ -9,7 +9,6 @@ from condocharge.app.services.email_service import EmailDeliveryError, EmailServ
 from condocharge.app.services.email_templates import build_test_email
 from condocharge.core.config import get_settings
 from condocharge.schemas.billing import EmailHealthResponse, TestEmailRequest, TestEmailResponse
-
 
 router = APIRouter(prefix="/admin/email", tags=["admin-email"])
 
@@ -32,7 +31,7 @@ def email_health(admin_user: AdminUser) -> EmailHealthResponse:
 def test_send_email(admin_user: AdminUser, body: TestEmailRequest) -> TestEmailResponse:
     settings = get_settings()
     email_service = EmailService(settings=settings)
-    generated_at = datetime.now(tz=timezone.utc)
+    generated_at = datetime.now(tz=UTC)
     template = build_test_email(
         condominium_name=admin_user.condominium.name,
         recipient_email=body.recipient_email,

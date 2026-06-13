@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, HTTPException, Path, Query, status
 from sqlalchemy import select
 
 from condocharge.api.deps import DbSession, NonResidentUser
-from condocharge.api.v1._helpers import build_session_response, paginate, user_latest_session, user_totals
+from condocharge.api.v1._helpers import (
+    build_session_response,
+    paginate,
+    user_latest_session,
+    user_totals,
+)
 from condocharge.models.charging import RfidUser
 from condocharge.schemas.api import UserListResponse, UserResponse
-
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -21,8 +27,8 @@ router = APIRouter(prefix="/users", tags=["users"])
 def list_users(
     db: DbSession,
     current_user: NonResidentUser,
-    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of users to return"),
-    offset: int = Query(default=0, ge=0, description="Number of users to skip"),
+    limit: Annotated[int, Query(ge=1, le=200, description="Maximum number of users to return")] = 50,
+    offset: Annotated[int, Query(ge=0, description="Number of users to skip")] = 0,
 ) -> UserListResponse:
     base = (
         select(RfidUser)

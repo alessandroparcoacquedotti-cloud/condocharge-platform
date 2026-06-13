@@ -5,16 +5,21 @@ import base64
 import json
 import re
 import sys
-import time
 import traceback
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from playwright.sync_api import BrowserContext, Page, Request, Response, TimeoutError, sync_playwright
-
+from playwright.sync_api import (
+    BrowserContext,
+    Page,
+    Request,
+    Response,
+    TimeoutError,
+    sync_playwright,
+)
 
 DEFAULT_TARGETS = ["http://192.168.1.200", "http://192.168.1.201"]
 DEFAULT_PROFILE = "default"
@@ -127,7 +132,7 @@ def _default_har_path() -> Path:
 
 
 def _iso_now() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()
+    return datetime.now(tz=UTC).isoformat()
 
 
 def _print_info(message: str) -> None:

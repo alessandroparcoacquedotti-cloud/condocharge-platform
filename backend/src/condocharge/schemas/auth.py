@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import re
-
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
 
+from pydantic import BaseModel, Field, field_validator
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 

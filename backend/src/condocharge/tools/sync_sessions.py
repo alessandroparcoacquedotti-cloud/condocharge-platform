@@ -9,7 +9,6 @@ from condocharge.app.integrations.legrand.driver import LegrandGreenUpDriver
 from condocharge.app.services.session_sync_service import SessionSyncService
 from condocharge.db.session import SessionLocal
 
-
 DEFAULT_HOSTS = ["192.168.1.200", "192.168.1.201"]
 
 

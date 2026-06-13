@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, status
 from sqlalchemy import select
@@ -9,7 +10,6 @@ from condocharge.api.deps import CurrentUser, DbSession
 from condocharge.api.v1._helpers import build_session_response, paginate, session_detail_query
 from condocharge.models.charging import ChargingSession, RfidUser
 from condocharge.schemas.api import SessionListResponse, SessionResponse
-
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -23,14 +23,14 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 def list_sessions(
     db: DbSession,
     current_user: CurrentUser,
-    from_date: datetime | None = Query(default=None, description="Filter sessions starting on or after this ISO datetime"),
-    to_date: datetime | None = Query(default=None, description="Filter sessions ending on or before this ISO datetime"),
-    start_date: datetime | None = Query(default=None, description="Filter sessions starting on or after this ISO datetime"),
-    end_date: datetime | None = Query(default=None, description="Filter sessions ending on or before this ISO datetime"),
-    rfid_id: str | None = Query(default=None, description="Filter by RFID card identifier"),
-    station_id: int | None = Query(default=None, ge=1, description="Filter by charging station identifier"),
-    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of sessions to return"),
-    offset: int = Query(default=0, ge=0, description="Number of sessions to skip"),
+    from_date: Annotated[datetime | None, Query(description="Filter sessions starting on or after this ISO datetime")] = None,
+    to_date: Annotated[datetime | None, Query(description="Filter sessions ending on or before this ISO datetime")] = None,
+    start_date: Annotated[datetime | None, Query(description="Filter sessions starting on or after this ISO datetime")] = None,
+    end_date: Annotated[datetime | None, Query(description="Filter sessions ending on or before this ISO datetime")] = None,
+    rfid_id: Annotated[str | None, Query(description="Filter by RFID card identifier")] = None,
+    station_id: Annotated[int | None, Query(ge=1, description="Filter by charging station identifier")] = None,
+    limit: Annotated[int, Query(ge=1, le=200, description="Maximum number of sessions to return")] = 50,
+    offset: Annotated[int, Query(ge=0, description="Number of sessions to skip")] = 0,
 ) -> SessionListResponse:
     base = session_detail_query()
     count_base = select(ChargingSession.id)
@@ -87,7 +87,6 @@ def get_session(
     )
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
-    if current_user.role == "resident":
-        if row.rfid_user is None or row.rfid_user.app_user_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    if current_user.role == "resident" and (row.rfid_user is None or row.rfid_user.app_user_id != current_user.id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     return build_session_response(row)

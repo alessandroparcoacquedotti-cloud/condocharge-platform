@@ -8,14 +8,17 @@ from condocharge.api.deps import CurrentUser, DbSession
 from condocharge.api.v1._helpers import build_session_response
 from condocharge.app.services.billing_service import BillingService
 from condocharge.app.services.pdf_statement_service import render_statement_pdf
-from condocharge.models.billing import BillingPayment, BillingPaymentEvent, ResidentBillingStatement, ResidentBillingStatementSession
+from condocharge.models.billing import (
+    BillingPayment,
+    BillingPaymentEvent,
+    ResidentBillingStatement,
+)
 from condocharge.schemas.billing import (
     BillingPaymentEventResponse,
     BillingPaymentResponse,
     BillingStatementDetailResponse,
     BillingStatementResponse,
 )
-
 
 router = APIRouter(prefix="/resident/billing", tags=["resident-billing"])
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from condocharge.app.integrations.legrand.discovery.fingerprinting import ProtocolFingerprinter
 from condocharge.app.integrations.legrand.discovery.inspection import (
@@ -38,7 +38,7 @@ class LegrandDiscoveryService:
         requests: Sequence[ProbeRequest],
         now: datetime | None = None,
     ) -> LegrandDiscoveryReport:
-        generated_at = now or datetime.now(tz=timezone.utc)
+        generated_at = now or datetime.now(tz=UTC)
         observations: list[ProbeObservation] = []
 
         for target in targets:

@@ -16,24 +16,6 @@ It combines:
 
 ![CondoCharge admin dashboard](docs/images/02-admin-dashboard.png)
 
-## GitHub Metadata
-
-Recommended GitHub repository description:
-
-`Multi-tenant EV charging management platform with FastAPI, React, billing workflows, reconciliation, and resident/admin portals.`
-
-Recommended GitHub topics:
-
-- `fastapi`
-- `react`
-- `typescript`
-- `vite`
-- `sqlalchemy`
-- `alembic`
-- `multi-tenant`
-- `ev-charging`
-- `portfolio-project`
-
 ![CondoCharge resident dashboard](docs/images/03-resident-dashboard.png)
 
 ![CondoCharge billing workflow](docs/images/04-billing-reconciliation.png)

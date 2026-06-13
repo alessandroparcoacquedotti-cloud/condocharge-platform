@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from condocharge.app.workers.contracts import ScheduledJob, Scheduler, Worker
+from condocharge.app.workers.contracts import ScheduledJob, Worker
 
 
 class InProcessScheduler:

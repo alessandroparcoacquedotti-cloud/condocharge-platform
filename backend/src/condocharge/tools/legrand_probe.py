@@ -5,14 +5,13 @@ import json
 import re
 import sys
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 from bs4 import BeautifulSoup
-
 
 DEFAULT_HOSTS = ["192.168.1.200", "192.168.1.201"]
 BASE_PROBE_PATHS = ["/", "/index.html", "/status", "/api", "/api/status", "/json", "/xml"]
@@ -500,7 +499,7 @@ def main(argv: list[str]) -> int:
                 )
 
     report = DeepDiscoveryReport(
-        generated_at=datetime.now(tz=timezone.utc).isoformat(),
+        generated_at=datetime.now(tz=UTC).isoformat(),
         timeout_seconds=timeout_seconds,
         follow_redirects=follow_redirects,
         verify_tls=verify_tls,

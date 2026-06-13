@@ -1,21 +1,34 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from threading import Lock
+from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, HTTPException, Path, Query, status
 from sqlalchemy import select
 
-from condocharge.api.deps import CurrentUser, DbSession, NonResidentUser
-from condocharge.api.v1._helpers import build_session_response, paginate, station_latest_session, station_totals
-from condocharge.app.integrations.base.models import ConnectorStatus, StationAvailability, StationTarget, StationVendor
+from condocharge.api.deps import DbSession, NonResidentUser
+from condocharge.api.v1._helpers import (
+    build_session_response,
+    paginate,
+    station_latest_session,
+    station_totals,
+)
+from condocharge.app.integrations.base.models import (
+    ConnectorStatus,
+)
 from condocharge.app.integrations.legrand.driver import LegrandGreenUpDriver
 from condocharge.core.config import get_settings
 from condocharge.models.charging import ChargingStation
-from condocharge.schemas.api import StationListResponse, StationOccupancyListResponse, StationOccupancyResponse, StationResponse
-
+from condocharge.schemas.api import (
+    StationListResponse,
+    StationOccupancyListResponse,
+    StationOccupancyResponse,
+    StationResponse,
+)
 
 router = APIRouter(prefix="/stations", tags=["stations"])
 
@@ -100,7 +113,7 @@ def _station_occupancy_snapshot(
     station: ChargingStation,
     credentials: tuple[str, str] | None,
 ) -> StationOccupancyResponse:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     if credentials is None:
         return StationOccupancyResponse(
             station_id=station.id,
@@ -117,7 +130,7 @@ def _station_occupancy_snapshot(
                 _live_driver.login(station.host, username, password)
                 _live_driver_hosts.add(station.host)
             status = _live_driver.get_station_status(station.host)
-        observed_at = datetime.now(tz=timezone.utc)
+        observed_at = datetime.now(tz=UTC)
         connector = status.connector_status or ConnectorStatus.UNKNOWN
 
         if connector in (ConnectorStatus.CHARGING, ConnectorStatus.OCCUPIED):
@@ -146,7 +159,7 @@ def _station_occupancy_snapshot(
 
 def _stations_live_occupancy(
     *,
-    stations: list[ChargingStation],
+    stations: Sequence[ChargingStation],
     credentials: tuple[str, str] | None,
 ) -> list[StationOccupancyResponse]:
     if not stations:
@@ -163,8 +176,8 @@ def _stations_live_occupancy(
 def list_stations(
     db: DbSession,
     current_user: NonResidentUser,
-    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of stations to return"),
-    offset: int = Query(default=0, ge=0, description="Number of stations to skip"),
+    limit: Annotated[int, Query(ge=1, le=200, description="Maximum number of stations to return")] = 50,
+    offset: Annotated[int, Query(ge=0, description="Number of stations to skip")] = 0,
 ) -> StationListResponse:
     base = (
         select(ChargingStation)

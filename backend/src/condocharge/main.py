@@ -8,7 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 
 from condocharge.api.router import api_router
-from condocharge.app.services.resident_notification_service import StationAvailabilityNotificationPoller
+from condocharge.app.services.resident_notification_service import (
+    StationAvailabilityNotificationPoller,
+)
 from condocharge.core.config import get_settings
 from condocharge.db.session import (
     RESOLVED_DATABASE_URL,

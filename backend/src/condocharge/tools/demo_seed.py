@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from condocharge.app.services.billing_service import BillingService
 from condocharge.core.security import hash_password
@@ -12,7 +13,6 @@ from condocharge.db.session import SessionLocal
 from condocharge.models.billing import BillingPeriod, ResidentBillingStatement
 from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
 from condocharge.models.tenancy import AppUser, AppUserRole, Condominium
-
 
 DEMO_CONDOMINIUM_NAME = "Portfolio Demo Condominium"
 DEMO_ADMIN_USERNAME = "demo_admin"
@@ -26,7 +26,7 @@ def _month_bounds(reference: datetime) -> tuple[datetime, datetime]:
     return prev_month_start, this_month_start
 
 
-def _get_or_create_condominium(db, *, name: str) -> Condominium:
+def _get_or_create_condominium(db: Session, *, name: str) -> Condominium:
     condo = db.scalar(select(Condominium).where(Condominium.name == name))
     if condo is not None:
         return condo
@@ -38,7 +38,7 @@ def _get_or_create_condominium(db, *, name: str) -> Condominium:
 
 
 def _get_or_create_user(
-    db,
+    db: Session,
     *,
     condominium_id: int,
     username: str,
@@ -65,7 +65,7 @@ def _get_or_create_user(
     return user
 
 
-def _get_or_create_station(db, *, condominium_id: int, host: str, name: str) -> ChargingStation:
+def _get_or_create_station(db: Session, *, condominium_id: int, host: str, name: str) -> ChargingStation:
     station = db.scalar(select(ChargingStation).where(ChargingStation.host == host))
     if station is not None:
         return station
@@ -76,7 +76,7 @@ def _get_or_create_station(db, *, condominium_id: int, host: str, name: str) -> 
         name=name,
         status="online",
         status_source="demo_seed",
-        last_sync_at=datetime.now(tz=timezone.utc),
+        last_sync_at=datetime.now(tz=UTC),
     )
     db.add(station)
     db.commit()
@@ -84,7 +84,7 @@ def _get_or_create_station(db, *, condominium_id: int, host: str, name: str) -> 
     return station
 
 
-def _get_or_create_rfid(db, *, condominium_id: int, app_user_id: int, rfid_id: str, name: str) -> RfidUser:
+def _get_or_create_rfid(db: Session, *, condominium_id: int, app_user_id: int, rfid_id: str, name: str) -> RfidUser:
     rfid = db.scalar(select(RfidUser).where(RfidUser.rfid_id == rfid_id))
     if rfid is not None:
         return rfid
@@ -101,7 +101,7 @@ def _get_or_create_rfid(db, *, condominium_id: int, app_user_id: int, rfid_id: s
 
 
 def _get_or_create_session(
-    db,
+    db: Session,
     *,
     condominium_id: int,
     station_id: int,
@@ -136,7 +136,7 @@ def _get_or_create_session(
 
 
 def seed_demo_data(*, condominium_name: str) -> None:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     period_start, period_end = _month_bounds(now)
     period_name = f"Demo Billing {period_start.strftime('%Y-%m')}"
 

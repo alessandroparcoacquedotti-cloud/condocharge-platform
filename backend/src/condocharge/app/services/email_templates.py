@@ -6,7 +6,6 @@ from html import escape
 
 from condocharge.models.billing import ResidentBillingStatement
 
-
 SUPPORT_PLACEHOLDER = "support@condocharge.local"
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Query
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
@@ -7,8 +9,10 @@ from sqlalchemy.orm import joinedload
 from condocharge.api.deps import AdminUser, DbSession
 from condocharge.api.v1._helpers import paginate
 from condocharge.models.tenancy import ResidentEmailNotification
-from condocharge.schemas.notifications import AdminNotificationLogListResponse, AdminNotificationLogRow
-
+from condocharge.schemas.notifications import (
+    AdminNotificationLogListResponse,
+    AdminNotificationLogRow,
+)
 
 router = APIRouter(prefix="/admin/notifications", tags=["admin-notifications"])
 
@@ -21,11 +25,11 @@ router = APIRouter(prefix="/admin/notifications", tags=["admin-notifications"])
 def list_notification_logs(
     db: DbSession,
     admin_user: AdminUser,
-    notification_type: str | None = Query(default=None),
-    status: str | None = Query(default=None),
-    resident_app_user_id: int | None = Query(default=None, ge=1),
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+    notification_type: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
+    resident_app_user_id: Annotated[int | None, Query(ge=1)] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> AdminNotificationLogListResponse:
     filters = [ResidentEmailNotification.condominium_id == admin_user.condominium_id]
     if notification_type:

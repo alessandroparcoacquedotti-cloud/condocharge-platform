@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
 import re
+from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -26,7 +26,7 @@ class ResidentSummaryResponse(BaseModel):
     estimated_annual_cost_eur: float
     latest_session: ResidentSessionResponse | None = None
     cards: list[ResidentCardResponse]
-    monthly_breakdown: list["MonthlyConsumptionPoint"]
+    monthly_breakdown: list[MonthlyConsumptionPoint]
 
 
 class MonthlyConsumptionPoint(BaseModel):
@@ -144,9 +144,10 @@ class UpdateResidentRequest(BaseModel):
     def validate_email(cls, value: str | None) -> str | None:
         if value in (None, ""):
             return None
-        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value):
+        email = value
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
             raise ValueError("Invalid email format")
-        return value
+        return email
 
 
 class ResidentNotificationPreferencesResponse(BaseModel):
@@ -181,6 +182,7 @@ class UpdateResidentProfileRequest(BaseModel):
     def validate_profile_email(cls, value: str | None) -> str | None:
         if value in (None, ""):
             return None
-        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value):
+        email = value
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
             raise ValueError("Invalid email format")
-        return value
+        return email

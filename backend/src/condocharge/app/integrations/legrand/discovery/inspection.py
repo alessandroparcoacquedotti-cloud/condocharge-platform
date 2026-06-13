@@ -5,7 +5,6 @@ import re
 
 from condocharge.app.integrations.legrand.discovery.models import ContentKind, ResponseSnapshot
 
-
 _XML_PREFIX = re.compile(rb"^\s*<\?xml\b", re.IGNORECASE)
 _XML_TAG = re.compile(rb"^\s*<([a-zA-Z_][\w\-.]*)(\s|>|/)", re.DOTALL)
 _HTML_DOCTYPE = re.compile(rb"^\s*<!doctype\s+html\b", re.IGNORECASE)

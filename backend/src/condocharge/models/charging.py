@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from condocharge.db.base import Base
+
+if TYPE_CHECKING:
+    from condocharge.models.tenancy import AppUser
 
 
 class ChargingStation(Base):
@@ -33,7 +37,7 @@ class ChargingStation(Base):
         nullable=False,
     )
 
-    sessions: Mapped[list["ChargingSession"]] = relationship(
+    sessions: Mapped[list[ChargingSession]] = relationship(
         back_populates="station",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -67,11 +71,11 @@ class RfidUser(Base):
         nullable=False,
     )
 
-    sessions: Mapped[list["ChargingSession"]] = relationship(
+    sessions: Mapped[list[ChargingSession]] = relationship(
         back_populates="rfid_user",
         passive_deletes=True,
     )
-    app_user: Mapped["AppUser | None"] = relationship(back_populates="rfid_users")
+    app_user: Mapped[AppUser | None] = relationship(back_populates="rfid_users")
 
 
 class ChargingSession(Base):

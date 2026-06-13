@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-from decimal import Decimal
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from condocharge.db.base import Base
 from condocharge.models.billing import BillingPeriod, ResidentBillingStatement
+
+if TYPE_CHECKING:
+    from condocharge.models.charging import RfidUser
 
 
 class AppUserRole(StrEnum):
@@ -33,12 +37,12 @@ class Condominium(Base):
         nullable=False,
     )
 
-    users: Mapped[list["AppUser"]] = relationship(
+    users: Mapped[list[AppUser]] = relationship(
         back_populates="condominium",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    billing_periods: Mapped[list["BillingPeriod"]] = relationship(
+    billing_periods: Mapped[list[BillingPeriod]] = relationship(
         back_populates="condominium",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -80,11 +84,11 @@ class AppUser(Base):
     )
 
     condominium: Mapped[Condominium] = relationship(back_populates="users")
-    rfid_users: Mapped[list["RfidUser"]] = relationship(
+    rfid_users: Mapped[list[RfidUser]] = relationship(
         back_populates="app_user",
         passive_deletes=True,
     )
-    billing_statements: Mapped[list["ResidentBillingStatement"]] = relationship(
+    billing_statements: Mapped[list[ResidentBillingStatement]] = relationship(
         back_populates="resident",
         passive_deletes=True,
     )

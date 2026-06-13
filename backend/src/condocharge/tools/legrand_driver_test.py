@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +13,6 @@ from condocharge.app.integrations.legrand.driver import (
     LegrandGreenUpRfidStatus,
     LegrandGreenUpStationStatus,
 )
-
 
 DEFAULT_HOSTS = ["192.168.1.200", "192.168.1.201"]
 
@@ -54,7 +53,7 @@ def _build_host_report(
 
 def _build_full_report(host_reports: list[dict[str, Any]]) -> dict[str, Any]:
     return {
-        "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        "generated_at": datetime.now(tz=UTC).isoformat(),
         "targets": host_reports,
     }
 
