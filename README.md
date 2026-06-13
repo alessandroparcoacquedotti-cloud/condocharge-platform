@@ -14,6 +14,8 @@ It combines:
 - Email reminder / receipt / statement preview and SMTP delivery flows
 - Tenant isolation with role-based access control
 
+![CondoCharge admin dashboard](docs/images/02-admin-dashboard.png)
+
 ## GitHub Metadata
 
 Recommended GitHub repository description:
@@ -31,6 +33,10 @@ Recommended GitHub topics:
 - `multi-tenant`
 - `ev-charging`
 - `portfolio-project`
+
+![CondoCharge resident dashboard](docs/images/03-resident-dashboard.png)
+
+![CondoCharge billing workflow](docs/images/04-billing-reconciliation.png)
 
 ## Product Summary
 
