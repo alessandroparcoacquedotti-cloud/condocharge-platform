@@ -26,6 +26,37 @@ It combines:
   <img src="docs/images/04-billing-reconciliation.png" width="100%">
 </p>
 
+# Problem
+
+Condominiums that install shared EV chargers quickly run into an operational problem: electricity is consumed by individual residents, but the infrastructure, invoices, and support workload sit with building management.
+
+Without a clear process, administrators are left reconciling spreadsheets, charger exports, bank transfers, and resident questions by hand. Typical pain points include:
+
+- unclear attribution of charging sessions to individual residents
+- inconsistent RFID-card assignment and resident onboarding
+- no clean billing period close process for shared charging costs
+- difficult reconciliation between statements issued and payments received
+- poor resident visibility into usage, charges, and payment status
+
+# Solution
+
+CondoCharge gives condominium operators a practical end-to-end workflow for shared EV charging administration.
+
+- Resident attribution: charging sessions are linked to RFID users and then mapped to residents so usage is assigned to the right apartment.
+- Billing: admins create billing periods, generate resident statements, and export statement PDFs for communication and record keeping.
+- Reconciliation: imported bank-payment rows can be matched against statements, with duplicates and unmatched payments tracked explicitly instead of disappearing into spreadsheets.
+- Payment tracking: every statement keeps payment status, amount paid, amount due, reminder history, and notification history in one place.
+
+# Key Features
+
+- Multi-tenant condominium architecture with strict data separation
+- Admin portal for residents, RFID assignment, billing, reconciliation, and notifications
+- Resident portal for session history, consumption visibility, and billing review
+- Statement generation with payment references and PDF exports
+- CSV-based payment import with job history and unmatched-payment queue
+- Reminder, receipt, and statement delivery flows with preview mode and SMTP support
+- Legrand charging integration for station status and imported charging sessions
+
 ## Product Summary
 
 CondoCharge helps a condominium operator manage shared EV charging infrastructure from imported charging sessions through billing and payment reconciliation.
@@ -53,7 +84,10 @@ See:
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [SECURITY_MODEL.md](docs/SECURITY_MODEL.md)
 - [BILLING_FLOW.md](docs/BILLING_FLOW.md)
+- [DEMO_DATA.md](docs/DEMO_DATA.md)
+- [DEMO_WALKTHROUGH.md](docs/DEMO_WALKTHROUGH.md)
 - [DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- [RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)
 - [PORTFOLIO_NOTES.md](docs/PORTFOLIO_NOTES.md)
 - [PORTFOLIO_IMPROVEMENTS.md](docs/PORTFOLIO_IMPROVEMENTS.md)
 
