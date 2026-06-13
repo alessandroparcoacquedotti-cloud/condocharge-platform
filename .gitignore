@@ -18,6 +18,7 @@ dist/
 *.sqlite3-shm
 *.sqlite3.backup_*
 *.db
+*.egg-info/
 
 reports/screenshots/
 reports/*.har
@@ -28,3 +29,4 @@ debug-*.md
 
 .idea/
 .vscode/
+frontend/tsconfig.tsbuildinfo

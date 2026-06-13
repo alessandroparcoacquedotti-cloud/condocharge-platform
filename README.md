@@ -41,13 +41,13 @@ See:
 - [BILLING_FLOW.md](docs/BILLING_FLOW.md)
 - [DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - [PORTFOLIO_NOTES.md](docs/PORTFOLIO_NOTES.md)
+- [PORTFOLIO_IMPROVEMENTS.md](docs/PORTFOLIO_IMPROVEMENTS.md)
 
 ## Repo Layout
 
 - `backend`: FastAPI app, services, Alembic migrations, tests, tools
 - `frontend`: React SPA, admin and resident pages, API client
 - `docs`: deployment, architecture, billing, security, release, and portfolio notes
-- `reports`: captured protocol and discovery artifacts used during station integration work
 
 ## Local Startup
 
@@ -132,6 +132,7 @@ Key settings:
 Place final screenshots in the portfolio/release package using:
 
 - [SCREENSHOTS_CHECKLIST.md](docs/SCREENSHOTS_CHECKLIST.md)
+- [PORTFOLIO_IMPROVEMENTS.md](docs/PORTFOLIO_IMPROVEMENTS.md)
 
 Suggested placeholders:
 
