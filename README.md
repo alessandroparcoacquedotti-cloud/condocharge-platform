@@ -14,11 +14,17 @@ It combines:
 - Email reminder / receipt / statement preview and SMTP delivery flows
 - Tenant isolation with role-based access control
 
-![CondoCharge admin dashboard](docs/images/02-admin-dashboard.png)
+<p align="center">
+  <img src="docs/images/02-admin-dashboard.png" width="100%">
+</p>
 
-![CondoCharge resident dashboard](docs/images/03-resident-dashboard.png)
+<p align="center">
+  <img src="docs/images/03-resident-dashboard.png" width="100%">
+</p>
 
-![CondoCharge billing workflow](docs/images/04-billing-reconciliation.png)
+<p align="center">
+  <img src="docs/images/04-billing-reconciliation.png" width="100%">
+</p>
 
 ## Product Summary
 
