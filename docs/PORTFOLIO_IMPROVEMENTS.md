@@ -1,6 +1,16 @@
 # Portfolio Improvements
 
-## Recommended GitHub Topics
+## GitHub Metadata
+
+Apply these values in the GitHub repository "About" panel for a cleaner recruiter-facing landing page.
+
+### Repository Description
+
+Use this exact repository description:
+
+`Multi-tenant EV charging management platform with FastAPI, React, billing workflows, reconciliation, and resident/admin portals.`
+
+### GitHub Topics
 
 - `fastapi`
 - `react`
@@ -11,12 +21,6 @@
 - `multi-tenant`
 - `ev-charging`
 - `portfolio-project`
-
-## Recommended Repository Description
-
-Use a concise GitHub description such as:
-
-`Multi-tenant EV charging management platform with FastAPI, React, billing workflows, reconciliation, and resident/admin portals.`
 
 ## Recommended Screenshot List
 

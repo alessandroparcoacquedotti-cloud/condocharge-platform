@@ -1,5 +1,7 @@
 # CondoCharge
 
+[![CI](https://github.com/alessandroparcoacquedotti-cloud/condocharge-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/alessandroparcoacquedotti-cloud/condocharge-platform/actions/workflows/ci.yml)
+
 CondoCharge is a multi-tenant condominium EV charging management platform built for real-world operational workflows and portfolio presentation.
 
 It combines:
@@ -11,6 +13,24 @@ It combines:
 - Payment reconciliation and CSV payment import
 - Email reminder / receipt / statement preview and SMTP delivery flows
 - Tenant isolation with role-based access control
+
+## GitHub Metadata
+
+Recommended GitHub repository description:
+
+`Multi-tenant EV charging management platform with FastAPI, React, billing workflows, reconciliation, and resident/admin portals.`
+
+Recommended GitHub topics:
+
+- `fastapi`
+- `react`
+- `typescript`
+- `vite`
+- `sqlalchemy`
+- `alembic`
+- `multi-tenant`
+- `ev-charging`
+- `portfolio-project`
 
 ## Product Summary
 
