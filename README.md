@@ -69,6 +69,10 @@ See:
 - [PORTFOLIO_NOTES.md](docs/PORTFOLIO_NOTES.md)
 - [PORTFOLIO_IMPROVEMENTS.md](docs/PORTFOLIO_IMPROVEMENTS.md)
 
+## Additional Docs
+
+- [SCREENSHOTS_CHECKLIST.md](docs/SCREENSHOTS_CHECKLIST.md)
+
 ## Repo Layout
 
 - `backend`: FastAPI app, services, Alembic migrations, tests, tools
@@ -152,26 +156,6 @@ Key settings:
 - Production must use a strong JWT secret.
 - Production must use a non-default admin password.
 - SMTP credentials and secrets must never be committed.
-
-## Screenshots
-
-Place final screenshots in the portfolio/release package using:
-
-- [SCREENSHOTS_CHECKLIST.md](docs/SCREENSHOTS_CHECKLIST.md)
-- [PORTFOLIO_IMPROVEMENTS.md](docs/PORTFOLIO_IMPROVEMENTS.md)
-
-Suggested placeholders:
-
-- Login
-- Admin dashboard
-- Resident dashboard
-- Admin residents / RFID assignment
-- Admin cost report
-- Billing periods / statements
-- Resident billing
-- Reconciliation
-- Reminders
-- Settings / email health
 
 ## Roadmap
 
