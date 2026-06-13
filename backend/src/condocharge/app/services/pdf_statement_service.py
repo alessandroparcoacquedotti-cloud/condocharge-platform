@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from condocharge.models.billing import ResidentBillingStatement
+from typing import cast
+
+from condocharge.models.billing import ResidentBillingStatement, ResidentBillingStatementSession
+from condocharge.models.charging import ChargingSession
+from condocharge.models.tenancy import AppUser
 
 
 def _pdf_escape(value: str) -> str:
@@ -8,15 +12,24 @@ def _pdf_escape(value: str) -> str:
     return sanitized.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
+def _statement_resident(statement: ResidentBillingStatement) -> AppUser:
+    return cast(AppUser, statement.resident)
+
+
+def _linked_session(link: ResidentBillingStatementSession) -> ChargingSession:
+    return cast(ChargingSession, link.charging_session)
+
+
 def render_statement_pdf(*, condominium_name: str, statement: ResidentBillingStatement) -> bytes:
     sessions = sorted(
         statement.session_links,
-        key=lambda link: (link.charging_session.end_time, link.charging_session.id),
+        key=lambda link: (_linked_session(link).end_time, _linked_session(link).id),
     )
+    resident = _statement_resident(statement)
     lines = [
         "CondoCharge Statement",
         f"Condominium: {condominium_name}",
-        f"Resident: {statement.resident.username}",
+        f"Resident: {resident.username}",
         f"Statement number: {statement.statement_number}",
         f"Payment reference: {statement.payment_reference}",
         f"Billing period: {statement.billing_period.name}",
@@ -30,7 +43,7 @@ def render_statement_pdf(*, condominium_name: str, statement: ResidentBillingSta
     ]
 
     for link in sessions:
-        session = link.charging_session
+        session = _linked_session(link)
         station_label = session.station.host if session.station is not None else f"#{session.station_id}"
         rfid_label = session.rfid_user.rfid_id if session.rfid_user is not None else "-"
         lines.append(
@@ -75,4 +88,3 @@ def render_statement_pdf(*, condominium_name: str, statement: ResidentBillingSta
         ).encode("ascii")
     )
     return bytes(pdf)
-

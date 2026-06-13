@@ -11,6 +11,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.sql.elements import ColumnElement
 
 from condocharge.api.deps import AdminUser, DbSession
 from condocharge.app.integrations.base.models import ConnectorStatus, StationTarget, StationVendor
@@ -88,13 +89,15 @@ def _app_user_response(user: AppUser, condo_name: str) -> AppUserResponse:
     )
 
 
-def _date_filters(*, from_date: datetime | None, to_date: datetime | None) -> list[object]:
-    filters: list[object] = []
+def _date_filters(
+    *, from_date: datetime | None, to_date: datetime | None
+) -> tuple[ColumnElement[bool], ...]:
+    filters: list[ColumnElement[bool]] = []
     if from_date is not None:
         filters.append(ChargingSession.start_time >= from_date)
     if to_date is not None:
         filters.append(ChargingSession.end_time <= to_date)
-    return filters
+    return tuple(filters)
 
 
 def _validate_report_scope(
@@ -580,8 +583,8 @@ def poll_stations(db: DbSession, body: PollStationsRequest, admin_user: AdminUse
                 station.status = computed
                 station.status_source = "polling"
                 station.last_sync_at = observed_at
-                station.active_session = computed == "charging"
-                station.active_session_source = "polling"
+                setattr(station, "active_session", computed == "charging")
+                setattr(station, "active_session_source", "polling")
                 items.append(
                     PolledStationResponse(
                         station_id=station.id,
@@ -596,8 +599,8 @@ def poll_stations(db: DbSession, body: PollStationsRequest, admin_user: AdminUse
                 station.status = "offline"
                 station.status_source = "polling"
                 station.last_sync_at = datetime.now(tz=UTC)
-                station.active_session = False
-                station.active_session_source = "polling"
+                setattr(station, "active_session", False)
+                setattr(station, "active_session_source", "polling")
                 errors.append(f"{host}: {type(exc).__name__}: {exc}")
 
         db.commit()
@@ -655,7 +658,7 @@ def admin_cost_report(
     price = float(admin_user.condominium.energy_price_eur_per_kwh)
     filters = _date_filters(from_date=from_date, to_date=to_date)
 
-    totals_row = db.execute(
+    totals_query = (
         select(
             func.count(ChargingSession.id),
             func.coalesce(func.sum(ChargingSession.energy_wh), 0),
@@ -663,17 +666,21 @@ def admin_cost_report(
         .select_from(ChargingSession)
         .outerjoin(RfidUser, RfidUser.id == ChargingSession.rfid_user_id)
         .where(ChargingSession.condominium_id == condo_id)
-        .where(*filters)
-        .where(RfidUser.app_user_id == resident_id if resident_id is not None else True)
-        .where(RfidUser.id == rfid_user_id if rfid_user_id is not None else True)
-    ).one()
+    )
+    for filter_clause in filters:
+        totals_query = totals_query.where(filter_clause)
+    if resident_id is not None:
+        totals_query = totals_query.where(RfidUser.app_user_id == resident_id)
+    if rfid_user_id is not None:
+        totals_query = totals_query.where(RfidUser.id == rfid_user_id)
+    totals_row = db.execute(totals_query).one()
 
     total_sessions = int(totals_row[0] or 0)
     total_energy_wh = int(totals_row[1] or 0)
     total_energy_kwh = total_energy_wh / 1000.0
     total_cost = round(total_energy_kwh * price, 2)
 
-    rows = db.execute(
+    rows_query = (
         select(
             AppUser.id,
             AppUser.username,
@@ -686,12 +693,16 @@ def admin_cost_report(
         .outerjoin(AppUser, AppUser.id == RfidUser.app_user_id)
         .where(RfidUser.condominium_id == condo_id)
         .where(ChargingSession.condominium_id == condo_id)
-        .where(*filters)
-        .where(AppUser.id == resident_id if resident_id is not None else True)
-        .where(RfidUser.id == rfid_user_id if rfid_user_id is not None else True)
         .group_by(AppUser.id, AppUser.username)
         .order_by(func.coalesce(func.sum(ChargingSession.energy_wh), 0).desc(), AppUser.username.asc())
-    ).all()
+    )
+    for filter_clause in filters:
+        rows_query = rows_query.where(filter_clause)
+    if resident_id is not None:
+        rows_query = rows_query.where(AppUser.id == resident_id)
+    if rfid_user_id is not None:
+        rows_query = rows_query.where(RfidUser.id == rfid_user_id)
+    rows = db.execute(rows_query).all()
 
     by_resident: list[CostByResidentRow] = []
     for app_user_id, username, sessions_count, energy_wh, rfid_count in rows:
@@ -755,7 +766,7 @@ def admin_cost_report_csv(
     condo_id = admin_user.condominium_id
     price = float(admin_user.condominium.energy_price_eur_per_kwh)
     filters = _date_filters(from_date=from_date, to_date=to_date)
-    rows = db.execute(
+    rows_query = (
         select(
             AppUser.username,
             RfidUser.rfid_id,
@@ -767,12 +778,16 @@ def admin_cost_report_csv(
         .outerjoin(AppUser, AppUser.id == RfidUser.app_user_id)
         .where(RfidUser.condominium_id == condo_id)
         .where(ChargingSession.condominium_id == condo_id)
-        .where(*filters)
-        .where(AppUser.id == resident_id if resident_id is not None else True)
-        .where(RfidUser.id == rfid_user_id if rfid_user_id is not None else True)
         .group_by(AppUser.username, RfidUser.rfid_id)
         .order_by(func.coalesce(func.sum(ChargingSession.energy_wh), 0).desc(), RfidUser.rfid_id.asc())
-    ).all()
+    )
+    for filter_clause in filters:
+        rows_query = rows_query.where(filter_clause)
+    if resident_id is not None:
+        rows_query = rows_query.where(AppUser.id == resident_id)
+    if rfid_user_id is not None:
+        rows_query = rows_query.where(RfidUser.id == rfid_user_id)
+    rows = db.execute(rows_query).all()
 
     for username, rfid_id, sessions_count, energy_wh in rows:
         energy_wh_i = int(energy_wh or 0)

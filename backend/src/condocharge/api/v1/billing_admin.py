@@ -5,7 +5,7 @@ import io
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, TypedDict, cast
 
 from fastapi import (
     APIRouter,
@@ -40,9 +40,13 @@ from condocharge.models.billing import (
     BillingPaymentImportJob,
     BillingPaymentImportRow,
     BillingPeriod,
+    BillingReminderRule,
     BillingUnmatchedPayment,
     ResidentBillingStatement,
+    ResidentBillingStatementSession,
 )
+from condocharge.models.charging import ChargingSession
+from condocharge.models.tenancy import AppUser
 from condocharge.schemas.billing import (
     BillingEmailNotificationResponse,
     BillingPaymentEventResponse,
@@ -85,6 +89,27 @@ class _EmailDeliveryResult:
     attachment_metadata: list[EmailAttachmentResponse]
 
 
+class _SettlementSummaryData(TypedDict):
+    total_billed_eur: float
+    paid_eur: float
+    unpaid_eur: float
+    waived_eur: float
+    partially_paid_eur: float
+    collection_rate: float
+    open_periods: int
+    closed_periods: int
+
+
+class _PaymentImportResultData(TypedDict):
+    job: BillingPaymentImportJob
+    imported_count: int
+    duplicate_count: int
+    unmatched_count: int
+    failed_count: int
+    unmatched_payments: list[BillingUnmatchedPayment]
+    rows: list[BillingPaymentImportRow]
+
+
 def _run_import_job(
     *,
     db: DbSession,
@@ -113,13 +138,48 @@ def _normalize_utc(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC)
 
 
+def _statement_resident(statement: ResidentBillingStatement) -> AppUser:
+    return cast(AppUser, statement.resident)
+
+
+def _payment_actor(payment: BillingPayment) -> AppUser:
+    return cast(AppUser, payment.created_by_user)
+
+
+def _payment_event_actor(event: BillingPaymentEvent) -> AppUser:
+    return cast(AppUser, event.changed_by_user)
+
+
+def _notification_actor(notification: BillingEmailNotification) -> AppUser:
+    return cast(AppUser, notification.created_by_user)
+
+
+def _linked_session(link: ResidentBillingStatementSession) -> ChargingSession:
+    return cast(ChargingSession, link.charging_session)
+
+
+def _payment_in_received_range(
+    payment: BillingPayment,
+    *,
+    normalized_received_from: datetime | None,
+    normalized_received_to: datetime | None,
+) -> bool:
+    received_at = _normalize_utc(payment.received_at)
+    if normalized_received_from is not None and (received_at is None or received_at < normalized_received_from):
+        return False
+    if normalized_received_to is not None and (received_at is None or received_at > normalized_received_to):
+        return False
+    return True
+
+
 def _to_statement_response(statement: ResidentBillingStatement) -> BillingStatementResponse:
+    resident = _statement_resident(statement)
     return BillingStatementResponse(
         id=statement.id,
         billing_period_id=statement.billing_period_id,
         period_name=statement.billing_period.name,
         resident_app_user_id=statement.resident_app_user_id,
-        resident_username=str(statement.resident.username),
+        resident_username=str(resident.username),
         statement_number=statement.statement_number,
         payment_reference=statement.payment_reference,
         sessions_count=statement.sessions_count,
@@ -157,7 +217,7 @@ def _to_period_response(period: BillingPeriod) -> BillingPeriodResponse:
 
 def _to_period_detail_response(period: BillingPeriod) -> BillingPeriodDetailResponse:
     base = _to_period_response(period)
-    statements = sorted(period.statements, key=lambda s: (s.resident.username.lower(), s.id))
+    statements = sorted(period.statements, key=lambda s: (_statement_resident(s).username.lower(), s.id))
     return BillingPeriodDetailResponse(
         **base.model_dump(),
         statements=[_to_statement_response(statement) for statement in statements],
@@ -165,10 +225,11 @@ def _to_period_detail_response(period: BillingPeriod) -> BillingPeriodDetailResp
 
 
 def _to_payment_event_response(event: BillingPaymentEvent) -> BillingPaymentEventResponse:
+    actor = _payment_event_actor(event)
     return BillingPaymentEventResponse(
         id=event.id,
         changed_by_app_user_id=event.changed_by_app_user_id,
-        changed_by_username=str(event.changed_by_user.username),
+        changed_by_username=str(actor.username),
         old_status=event.old_status,
         new_status=event.new_status,
         note=event.note,
@@ -177,6 +238,7 @@ def _to_payment_event_response(event: BillingPaymentEvent) -> BillingPaymentEven
 
 
 def _to_payment_response(payment: BillingPayment) -> BillingPaymentResponse:
+    actor = _payment_actor(payment)
     return BillingPaymentResponse(
         id=payment.id,
         statement_id=payment.statement_id,
@@ -186,12 +248,13 @@ def _to_payment_response(payment: BillingPayment) -> BillingPaymentResponse:
         note=payment.note,
         received_at=payment.received_at,
         created_by_app_user_id=payment.created_by_app_user_id,
-        created_by_username=str(payment.created_by_user.username),
+        created_by_username=str(actor.username),
         created_at=payment.created_at,
     )
 
 
 def _to_notification_response(notification: BillingEmailNotification) -> BillingEmailNotificationResponse:
+    actor = _notification_actor(notification)
     return BillingEmailNotificationResponse(
         id=notification.id,
         statement_id=notification.statement_id,
@@ -204,7 +267,7 @@ def _to_notification_response(notification: BillingEmailNotification) -> Billing
         sent_at=notification.sent_at,
         retry_of_notification_id=notification.retry_of_notification_id,
         created_by_app_user_id=notification.created_by_app_user_id,
-        created_by_username=str(notification.created_by_user.username),
+        created_by_username=str(actor.username),
         created_at=notification.created_at,
     )
 
@@ -290,6 +353,7 @@ def _to_import_row_response(row: BillingPaymentImportRow) -> BillingPaymentImpor
 
 
 def _to_import_job_summary_response(job: BillingPaymentImportJob) -> BillingPaymentImportJobSummaryResponse:
+    actor = cast(AppUser, job.created_by_user)
     return BillingPaymentImportJobSummaryResponse(
         id=job.id,
         condominium_id=job.condominium_id,
@@ -304,7 +368,7 @@ def _to_import_job_summary_response(job: BillingPaymentImportJob) -> BillingPaym
         rows_failed=int(job.rows_failed),
         error_message=job.error_message,
         created_by_app_user_id=job.created_by_app_user_id,
-        created_by_username=str(job.created_by_user.username),
+        created_by_username=str(actor.username),
         created_at=job.created_at,
         completed_at=job.completed_at,
     )
@@ -358,7 +422,8 @@ def _deliver_statement_email(
         notification_type=notification_type,
     )
     attachment_metadata = [_to_attachment_response(attachment) for attachment in attachments]
-    recipient = target_email or statement.resident.email or statement.resident.username
+    resident = _statement_resident(statement)
+    recipient = target_email or resident.email or resident.username
 
     if not email_service.enabled:
         notification = service.create_email_notification(
@@ -373,7 +438,7 @@ def _deliver_statement_email(
         )
         return _EmailDeliveryResult(notification=notification, attachment_metadata=attachment_metadata)
 
-    if not statement.resident.email:
+    if not resident.email:
         notification = service.create_email_notification(
             statement_id=statement.id,
             recipient_email=recipient,
@@ -389,7 +454,7 @@ def _deliver_statement_email(
 
     try:
         email_service.send(
-            to_email=statement.resident.email,
+            to_email=resident.email,
             subject=template.subject,
             text_body=template.text_body,
             html_body=template.html_body,
@@ -397,7 +462,7 @@ def _deliver_statement_email(
         )
         notification = service.create_email_notification(
             statement_id=statement.id,
-            recipient_email=statement.resident.email,
+            recipient_email=resident.email,
             notification_type=notification_type,
             subject=template.subject,
             body_preview=template.text_body,
@@ -410,7 +475,7 @@ def _deliver_statement_email(
     except EmailDeliveryError as exc:
         notification = service.create_email_notification(
             statement_id=statement.id,
-            recipient_email=statement.resident.email,
+            recipient_email=resident.email,
             notification_type=notification_type,
             subject=template.subject,
             body_preview=template.text_body,
@@ -423,7 +488,7 @@ def _deliver_statement_email(
 
 
 def _to_statement_detail_response(statement: ResidentBillingStatement) -> BillingStatementDetailResponse:
-    session_links = sorted(statement.session_links, key=lambda link: (link.charging_session.end_time, link.charging_session.id))
+    session_links = sorted(statement.session_links, key=lambda link: (_linked_session(link).end_time, _linked_session(link).id))
     payment_history = sorted(statement.payment_events, key=lambda event: (event.created_at, event.id), reverse=True)
     payments = sorted(statement.payments, key=lambda p: (p.received_at, p.id), reverse=True)
     notifications = sorted(statement.email_notifications, key=lambda n: (n.created_at, n.id), reverse=True)
@@ -432,7 +497,7 @@ def _to_statement_detail_response(statement: ResidentBillingStatement) -> Billin
         period_start=statement.billing_period.period_start,
         period_end=statement.billing_period.period_end,
         energy_price_eur_per_kwh_snapshot=float(statement.billing_period.energy_price_eur_per_kwh_snapshot),
-        sessions=[build_session_response(link.charging_session) for link in session_links],
+        sessions=[build_session_response(_linked_session(link)) for link in session_links],
         payment_history=[_to_payment_event_response(event) for event in payment_history],
         payments=[_to_payment_response(payment) for payment in payments],
         notifications=[_to_notification_response(notification) for notification in notifications],
@@ -539,7 +604,8 @@ def export_statement_pdf(db: DbSession, admin_user: AdminUser, statement_id: int
 @router.get("/settlement/summary", response_model=SettlementSummaryResponse, summary="Get settlement summary")
 def get_settlement_summary(db: DbSession, admin_user: AdminUser) -> SettlementSummaryResponse:
     service = BillingService(db=db)
-    return SettlementSummaryResponse(**service.settlement_summary(condominium_id=admin_user.condominium_id))
+    summary = cast(_SettlementSummaryData, service.settlement_summary(condominium_id=admin_user.condominium_id))
+    return SettlementSummaryResponse(**summary)
 
 
 @router.post(
@@ -616,10 +682,11 @@ def create_reminder(db: DbSession, admin_user: AdminUser, statement_id: int) -> 
         statement=statement,
         notification_type="reminder",
     )
-    to_value = statement.resident.email or statement.resident.username
+    resident = _statement_resident(statement)
+    to_value = resident.email or resident.username
     return ReminderPayloadResponse(
         to=to_value,
-        resident_username=statement.resident.username,
+        resident_username=resident.username,
         statement_number=statement.statement_number,
         subject=template.subject,
         body_preview=template.text_body,
@@ -634,7 +701,7 @@ def create_reminder(db: DbSession, admin_user: AdminUser, statement_id: int) -> 
     )
 
 
-def _to_reminder_rule_response(rule) -> BillingReminderRuleResponse:
+def _to_reminder_rule_response(rule: BillingReminderRule) -> BillingReminderRuleResponse:
     return BillingReminderRuleResponse(
         id=rule.id,
         condominium_id=rule.condominium_id,
@@ -785,8 +852,11 @@ def reconciliation(
         matching_payments = [
             p
             for p in statement.payments
-            if (normalized_received_from is None or _normalize_utc(p.received_at) >= normalized_received_from)
-            and (normalized_received_to is None or _normalize_utc(p.received_at) <= normalized_received_to)
+            if _payment_in_received_range(
+                p,
+                normalized_received_from=normalized_received_from,
+                normalized_received_to=normalized_received_to,
+            )
         ]
         last_payment_at = max((p.received_at for p in matching_payments), default=max((p.received_at for p in statement.payments), default=None))
         amount = float(statement.amount_eur)
@@ -804,7 +874,7 @@ def reconciliation(
                 billing_period_id=statement.billing_period_id,
                 period_name=statement.billing_period.name,
                 resident_app_user_id=statement.resident_app_user_id,
-                resident_username=statement.resident.username,
+                resident_username=_statement_resident(statement).username,
                 amount_eur=amount,
                 amount_paid_eur=paid,
                 amount_due_eur=due,
@@ -850,9 +920,10 @@ def send_receipt(db: DbSession, admin_user: AdminUser, statement_id: int) -> Rec
         notification_type="receipt",
     )
     latest_payment_date = max((payment.received_at for payment in statement.payments), default=statement.paid_at)
+    resident = _statement_resident(statement)
     return ReceiptPayloadResponse(
-        to=statement.resident.email or statement.resident.username,
-        resident_username=statement.resident.username,
+        to=resident.email or resident.username,
+        resident_username=resident.username,
         statement_number=statement.statement_number,
         subject=template.subject,
         body_preview=template.text_body,
@@ -887,9 +958,10 @@ def send_statement(db: DbSession, admin_user: AdminUser, statement_id: int) -> S
         statement=statement,
         notification_type="statement",
     )
+    resident = _statement_resident(statement)
     return StatementPayloadResponse(
-        to=statement.resident.email or statement.resident.username,
-        resident_username=statement.resident.username,
+        to=resident.email or resident.username,
+        resident_username=resident.username,
         statement_number=statement.statement_number,
         subject=template.subject,
         body_preview=template.text_body,
@@ -944,11 +1016,14 @@ def import_payments_csv(
             rows=[],
         )
 
-    result = service.import_payments_csv(
+    result = cast(
+        _PaymentImportResultData,
+        service.import_payments_csv(
         condominium_id=admin_user.condominium_id,
         created_by_app_user_id=admin_user.id,
         csv_text=csv_body,
         filename="payments.csv",
+        ),
     )
     return PaymentImportResultResponse(
         import_job_id=int(result["job"].id),
@@ -1000,11 +1075,14 @@ async def import_payments_upload(
             rows=[],
         )
 
-    result = service.import_payments_csv(
+    result = cast(
+        _PaymentImportResultData,
+        service.import_payments_csv(
         condominium_id=admin_user.condominium_id,
         created_by_app_user_id=admin_user.id,
         csv_text=csv_text,
         filename=file.filename or "payments.csv",
+        ),
     )
     return PaymentImportResultResponse(
         import_job_id=int(result["job"].id),
@@ -1148,7 +1226,7 @@ def retry_notification(db: DbSession, admin_user: AdminUser, notification_id: in
         admin_user=admin_user,
         statement=statement,
         notification_type=notification.notification_type,
-        target_email=statement.resident.email or notification.recipient_email,
+        target_email=_statement_resident(statement).email or notification.recipient_email,
         retry_of_notification_id=notification.id,
     )
     retried = service.get_notification_for_admin(
@@ -1179,11 +1257,11 @@ def export_billing_period_csv(db: DbSession, admin_user: AdminUser, period_id: i
     )
     writer.writeheader()
 
-    for statement in sorted(period.statements, key=lambda s: (s.resident.username.lower(), s.id)):
+    for statement in sorted(period.statements, key=lambda s: (_statement_resident(s).username.lower(), s.id)):
         writer.writerow(
             {
                 "period": period.name,
-                "resident": statement.resident.username,
+                "resident": _statement_resident(statement).username,
                 "sessions_count": statement.sessions_count,
                 "energy_kwh": f"{float(statement.energy_kwh):.3f}",
                 "amount_eur": f"{float(statement.amount_eur):.2f}",

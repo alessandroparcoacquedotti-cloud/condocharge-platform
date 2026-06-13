@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
@@ -12,7 +14,10 @@ from condocharge.models.billing import (
     BillingPayment,
     BillingPaymentEvent,
     ResidentBillingStatement,
+    ResidentBillingStatementSession,
 )
+from condocharge.models.charging import ChargingSession
+from condocharge.models.tenancy import AppUser
 from condocharge.schemas.billing import (
     BillingPaymentEventResponse,
     BillingPaymentResponse,
@@ -28,13 +33,30 @@ def _require_resident(current_user: CurrentUser) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
+def _statement_resident(statement: ResidentBillingStatement) -> AppUser:
+    return cast(AppUser, statement.resident)
+
+
+def _payment_actor(payment: BillingPayment) -> AppUser:
+    return cast(AppUser, payment.created_by_user)
+
+
+def _payment_event_actor(event: BillingPaymentEvent) -> AppUser:
+    return cast(AppUser, event.changed_by_user)
+
+
+def _linked_session(link: ResidentBillingStatementSession) -> ChargingSession:
+    return cast(ChargingSession, link.charging_session)
+
+
 def _statement_response(statement: ResidentBillingStatement) -> BillingStatementResponse:
+    resident = _statement_resident(statement)
     return BillingStatementResponse(
         id=statement.id,
         billing_period_id=statement.billing_period_id,
         period_name=statement.billing_period.name,
         resident_app_user_id=statement.resident_app_user_id,
-        resident_username=statement.resident.username,
+        resident_username=resident.username,
         statement_number=statement.statement_number,
         payment_reference=statement.payment_reference,
         sessions_count=statement.sessions_count,
@@ -51,10 +73,11 @@ def _statement_response(statement: ResidentBillingStatement) -> BillingStatement
 
 
 def _payment_event_response(event: BillingPaymentEvent) -> BillingPaymentEventResponse:
+    actor = _payment_event_actor(event)
     return BillingPaymentEventResponse(
         id=event.id,
         changed_by_app_user_id=event.changed_by_app_user_id,
-        changed_by_username=str(event.changed_by_user.username),
+        changed_by_username=str(actor.username),
         old_status=event.old_status,
         new_status=event.new_status,
         note=event.note,
@@ -63,6 +86,7 @@ def _payment_event_response(event: BillingPaymentEvent) -> BillingPaymentEventRe
 
 
 def _payment_response(payment: BillingPayment) -> BillingPaymentResponse:
+    actor = _payment_actor(payment)
     return BillingPaymentResponse(
         id=payment.id,
         statement_id=payment.statement_id,
@@ -72,7 +96,7 @@ def _payment_response(payment: BillingPayment) -> BillingPaymentResponse:
         note=payment.note,
         received_at=payment.received_at,
         created_by_app_user_id=payment.created_by_app_user_id,
-        created_by_username=str(payment.created_by_user.username),
+        created_by_username=str(actor.username),
         created_at=payment.created_at,
     )
 
@@ -111,7 +135,7 @@ def resident_billing_statement_detail(
     )
     session_links = sorted(
         statement.session_links,
-        key=lambda link: (link.charging_session.end_time, link.charging_session.id),
+        key=lambda link: (_linked_session(link).end_time, _linked_session(link).id),
     )
     payments = sorted(statement.payments, key=lambda p: (p.received_at, p.id), reverse=True)
     return BillingStatementDetailResponse(
@@ -119,7 +143,7 @@ def resident_billing_statement_detail(
         period_start=statement.billing_period.period_start,
         period_end=statement.billing_period.period_end,
         energy_price_eur_per_kwh_snapshot=float(statement.billing_period.energy_price_eur_per_kwh_snapshot),
-        sessions=[build_session_response(link.charging_session) for link in session_links],
+        sessions=[build_session_response(_linked_session(link)) for link in session_links],
         payment_history=[_payment_event_response(event) for event in sorted(statement.payment_events, key=lambda event: (event.created_at, event.id), reverse=True)],
         payments=[_payment_response(payment) for payment in payments],
     )
