@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -141,9 +142,6 @@ def login(request: Request, db: DbSession, body: LoginRequest) -> LoginResponse:
     if not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    user.last_login_at = datetime.now(tz=UTC)
-    db.commit()
-
     settings = get_settings()
     token = create_access_token(
         user_id=user.id,
@@ -154,6 +152,18 @@ def login(request: Request, db: DbSession, body: LoginRequest) -> LoginResponse:
         algorithm=settings.jwt_algorithm,
         expires_minutes=settings.jwt_access_token_expires_minutes,
     )
+
+    user.last_login_at = datetime.now(tz=UTC)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logging.getLogger("uvicorn.error").warning(
+            "Failed to update last_login_at user_id=%s condominium_id=%s",
+            user.id,
+            user.condominium_id,
+            exc_info=True,
+        )
     return LoginResponse(
         token=TokenResponse(
             access_token=token,

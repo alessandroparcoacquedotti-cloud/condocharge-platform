@@ -193,6 +193,58 @@ def test_login_invalid_credentials_returns_401() -> None:
     assert resp.status_code == 401
 
 
+def test_login_returns_200_when_last_login_commit_fails() -> None:
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SeedingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, class_=Session)
+    Base.metadata.create_all(bind=engine)
+
+    with SeedingSessionLocal() as db:
+        condo_a = Condominium(name="Condo A", is_active=1)
+        db.add(condo_a)
+        db.flush()
+        db.add(
+            AppUser(
+                condominium_id=condo_a.id,
+                username="admin_a",
+                email="admin_a@example.com",
+                password_hash=hash_password("password123"),
+                role="admin",
+                is_active=1,
+            )
+        )
+        db.commit()
+
+    class CommitFailSession(Session):
+        def commit(self) -> None:
+            raise RuntimeError("commit failed")
+
+    FailingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, class_=CommitFailSession)
+    app = create_app()
+
+    def override_get_db_session() -> Iterator[Session]:
+        db = FailingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    client = TestClient(app)
+
+    resp = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin_a", "password": "password123", "condominium": "Condo A"},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["token"]["access_token"]
+    assert payload["user"]["username"] == "admin_a"
+
+
 def test_login_without_condominium_uses_unique_active_condominium() -> None:
     engine = create_engine(
         "sqlite://",
