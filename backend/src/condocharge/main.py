@@ -1,10 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
-import time
-import urllib.request
-from uuid import uuid4
 from threading import Event, Thread
 
 from fastapi import FastAPI
@@ -30,60 +26,6 @@ def create_app() -> FastAPI:
     settings = get_settings()
     settings.validate_runtime_settings()
     app = FastAPI(title="CondoCharge", version="0.1.0")
-
-    #region debug-point railway-public-url-timeout-report
-    def _dbg_report(event: dict) -> None:
-        url = os.environ.get("DEBUG_SERVER_URL")
-        session_id = os.environ.get("DEBUG_SESSION_ID", "railway-public-url-timeout")
-        if not url:
-            return
-        payload = (
-            '{"sessionId":"%s","ts":%d,"event":%s}'
-            % (
-                session_id.replace('"', ""),
-                int(time.time() * 1000),
-                __import__("json").dumps(event, ensure_ascii=False),
-            )
-        ).encode("utf-8")
-        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
-        try:
-            urllib.request.urlopen(req, timeout=2)  # noqa: S310
-        except Exception:
-            return
-
-    @app.middleware("http")
-    async def _dbg_request_middleware(request, call_next):
-        request_id = uuid4().hex
-        _dbg_report(
-            {
-                "type": "request_start",
-                "requestId": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "host": request.headers.get("host"),
-            }
-        )
-        try:
-            response = await call_next(request)
-            _dbg_report(
-                {
-                    "type": "request_end",
-                    "requestId": request_id,
-                    "statusCode": getattr(response, "status_code", None),
-                }
-            )
-            return response
-        except Exception as exc:
-            _dbg_report(
-                {
-                    "type": "request_exception",
-                    "requestId": request_id,
-                    "excType": type(exc).__name__,
-                    "excRepr": repr(exc),
-                }
-            )
-            raise
-    #endregion debug-point railway-public-url-timeout-report
 
     cors_origins = settings.effective_cors_origin_strings
     if cors_origins:
