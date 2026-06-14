@@ -8,9 +8,9 @@ WORKDIR /app
 RUN pip install --no-cache-dir --upgrade pip
 
 COPY pyproject.toml /app/pyproject.toml
+COPY src /app/src
 RUN pip install --no-cache-dir -e ".[dev]"
 
-COPY src /app/src
 COPY alembic.ini /app/alembic.ini
 COPY alembic /app/alembic
 
