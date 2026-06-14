@@ -6,6 +6,10 @@ from functools import lru_cache
 from pydantic import AnyUrl, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEFAULT_PRODUCTION_CORS_ORIGINS = (
+    "https://shimmering-quietude-production.up.railway.app",
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -56,6 +60,15 @@ class Settings(BaseSettings):
     def cors_origin_strings(self) -> list[str]:
         return [str(origin).strip().rstrip("/") for origin in self.cors_origins]
 
+    @property
+    def effective_cors_origin_strings(self) -> list[str]:
+        configured = self.cors_origin_strings
+        if configured:
+            return configured
+        if self.requires_secure_runtime:
+            return list(DEFAULT_PRODUCTION_CORS_ORIGINS)
+        return []
+
     def validate_runtime_settings(self) -> None:
         public_url = self.public_url.strip().rstrip("/")
 
@@ -85,7 +98,7 @@ class Settings(BaseSettings):
                 "Set a strong non-default secret before startup."
             )
 
-        cors_values = self.cors_origin_strings
+        cors_values = self.effective_cors_origin_strings
         if "*" in cors_values:
             raise RuntimeError("Wildcard CONDOCHARGE_CORS_ORIGINS is not allowed in pilot/production.")
 
