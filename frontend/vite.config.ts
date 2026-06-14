@@ -13,4 +13,8 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    host: true,
+    allowedHosts: ["lucid-ambition-production-aa75.up.railway.app"],
+  },
 });
