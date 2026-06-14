@@ -78,19 +78,31 @@ export function createApiClient(options: ApiClientOptions = {}) {
     async post(path: string, init: RequestInit = {}) {
       const token = getStoredToken();
       const wrapped = withTimeout(init);
+      const finalUrl = joinUrl(baseUrl, path);
+      const requestOptions: RequestInit = {
+        ...wrapped.init,
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+          "Cache-Control": "no-store",
+          ...(init.headers ?? {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      };
       let res: Response;
       try {
-        res = await fetch(joinUrl(baseUrl, path), {
-          ...wrapped.init,
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            Accept: "application/json",
-            "Cache-Control": "no-store",
-            ...(init.headers ?? {}),
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
+        console.log("FETCH_URL", finalUrl);
+        console.log("FETCH_OPTIONS", requestOptions);
+        res = await fetch(finalUrl, requestOptions);
+      } catch (error) {
+        console.error("FETCH_FAILURE", {
+          raw: error,
+          name: error instanceof Error ? error.name : undefined,
+          message: error instanceof Error ? error.message : String(error),
+          onLine: navigator.onLine,
         });
+        throw error;
       } finally {
         wrapped.cleanup();
       }

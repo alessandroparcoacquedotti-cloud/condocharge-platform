@@ -23,13 +23,26 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const defaultCondominium = env.defaultCondominiumName.trim();
-      await auth.login({
+      const payload = {
         username: username.trim(),
         password,
         condominium: defaultCondominium ? defaultCondominium : undefined,
+      };
+      console.log("LOGIN_RUNTIME", {
+        origin: window.location.origin,
+        apiBaseUrl: env.apiBaseUrl,
+        defaultCondominiumName: env.defaultCondominiumName,
       });
+      console.log("LOGIN_START", payload);
+      await auth.login(payload);
       navigate(next, { replace: true });
     } catch (err) {
+      console.error("LOGIN_EXCEPTION", {
+        raw: err,
+        name: err instanceof Error ? err.name : undefined,
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       const message = typeof err === "object" && err && "message" in err ? String((err as any).message) : "Login failed";
       setError(message);
     } finally {
