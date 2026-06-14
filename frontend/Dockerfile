@@ -8,6 +8,7 @@ RUN npm ci
 
 COPY . /app
 
+RUN echo "===== VITE CONFIG =====" && cat /app/vite.config.ts
 RUN npm run build
 
 ENV PORT=4173
