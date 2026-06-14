@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir -e ".[dev]"
 
 COPY alembic.ini /app/alembic.ini
 COPY alembic /app/alembic
+COPY start_public_demo.py /app/start_public_demo.py
 
 EXPOSE 8000
 
-CMD ["uvicorn", "condocharge.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "start_public_demo.py"]
