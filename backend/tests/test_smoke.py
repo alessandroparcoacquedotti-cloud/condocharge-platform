@@ -47,7 +47,7 @@ def test_pilot_cors_origin_allows_exact_origin_without_trailing_slash(monkeypatc
         headers={
             "Origin": "http://localhost:5173",
             "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "authorization,content-type",
+            "Access-Control-Request-Headers": "authorization,cache-control,content-type",
         },
     )
 
@@ -64,6 +64,7 @@ def test_pilot_cors_origin_allows_exact_origin_without_trailing_slash(monkeypatc
     }
     allowed_headers = {header.strip().lower() for header in response.headers["access-control-allow-headers"].split(",")}
     assert "authorization" in allowed_headers
+    assert "cache-control" in allowed_headers
     assert "content-type" in allowed_headers
     get_settings.cache_clear()
 
@@ -80,7 +81,7 @@ def test_production_uses_default_railway_frontend_origin_for_cors(monkeypatch: p
         headers={
             "Origin": "https://shimmering-quietude-production.up.railway.app",
             "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "authorization,content-type",
+            "Access-Control-Request-Headers": "authorization,cache-control,content-type",
         },
     )
 
@@ -89,5 +90,6 @@ def test_production_uses_default_railway_frontend_origin_for_cors(monkeypatch: p
     assert response.headers["access-control-allow-credentials"] == "true"
     allowed_headers = {header.strip().lower() for header in response.headers["access-control-allow-headers"].split(",")}
     assert "authorization" in allowed_headers
+    assert "cache-control" in allowed_headers
     assert "content-type" in allowed_headers
     get_settings.cache_clear()
