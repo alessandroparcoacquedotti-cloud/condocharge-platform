@@ -1,15 +1,44 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from condocharge.db.base import Base
 
 if TYPE_CHECKING:
     from condocharge.models.tenancy import AppUser
+
+
+class UtcAwareDateTime(TypeDecorator[datetime]):
+    """Store timestamps as ISO-8601 UTC strings and always return aware UTC datetimes."""
+
+    impl = String(64)
+    cache_ok = True
+
+    @staticmethod
+    def _coerce(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    def process_bind_param(self, value: datetime | None, dialect: object) -> str | None:
+        del dialect
+        if value is None:
+            return None
+        return self._coerce(value).isoformat().replace("+00:00", "Z")
+
+    def process_result_value(self, value: object, dialect: object) -> datetime | None:
+        del dialect
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return self._coerce(value)
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return self._coerce(parsed)
 
 
 class ChargingStation(Base):
@@ -27,7 +56,7 @@ class ChargingStation(Base):
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="unknown")
     status_source: Mapped[str] = mapped_column(String(32), nullable=False, server_default="last_sync")
-    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_sync_at: Mapped[datetime | None] = mapped_column(UtcAwareDateTime(), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
