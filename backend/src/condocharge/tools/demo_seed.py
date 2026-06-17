@@ -251,7 +251,8 @@ def seed_demo_data(*, condominium_name: str) -> None:
                 period_end=period_end,
             )
 
-        period = service.generate_period(condominium=condo, period=period)
+        if period.status == "draft":
+            period = service.generate_period(condominium=condo, period=period)
         if period.status != "closed":
             period = service.close_period(condominium=condo, period=period)
 
@@ -297,14 +298,72 @@ def seed_demo_data(*, condominium_name: str) -> None:
         print("This script is for demo/development data only and does not delete existing real data.")
 
 
+def seed_bootstrap_data(
+    *,
+    condominium_name: str,
+    admin_username: str | None,
+    admin_password: str | None,
+    admin_email: str | None,
+) -> None:
+    with SessionLocal() as db:
+        condo = _get_or_create_condominium(db, name=condominium_name)
+
+        created_admin: AppUser | None = None
+        if admin_username and admin_password:
+            created_admin = _get_or_create_user(
+                db,
+                condominium_id=condo.id,
+                username=admin_username,
+                password=admin_password,
+                role=AppUserRole.ADMIN,
+                email=admin_email,
+            )
+
+        print("Bootstrap seed complete")
+        print(f"Condominium: {condo.name}")
+        if created_admin is not None:
+            print(f"Admin user: {created_admin.username}")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed CondoCharge demo/dev data without deleting existing data.")
+    parser = argparse.ArgumentParser(
+        description="Seed CondoCharge demo/dev data (demo) or create minimal bootstrap data (bootstrap) without deleting existing data."
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("demo", "bootstrap"),
+        default="demo",
+        help="Seeding mode: 'demo' creates demo users/sessions/billing; 'bootstrap' only creates the condominium and optional admin.",
+    )
     parser.add_argument(
         "--condominium-name",
         default=DEMO_CONDOMINIUM_NAME,
         help="Name of the demo condominium to create or reuse.",
     )
+    parser.add_argument(
+        "--admin-username",
+        default=None,
+        help="Admin username to create in bootstrap mode (optional).",
+    )
+    parser.add_argument(
+        "--admin-password",
+        default=None,
+        help="Admin password to create in bootstrap mode (optional).",
+    )
+    parser.add_argument(
+        "--admin-email",
+        default=None,
+        help="Admin email to set in bootstrap mode (optional).",
+    )
     args = parser.parse_args()
+    if args.mode == "bootstrap":
+        seed_bootstrap_data(
+            condominium_name=args.condominium_name,
+            admin_username=args.admin_username,
+            admin_password=args.admin_password,
+            admin_email=args.admin_email,
+        )
+        return
     seed_demo_data(condominium_name=args.condominium_name)
 
 

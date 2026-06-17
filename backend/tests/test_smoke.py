@@ -93,3 +93,39 @@ def test_production_uses_default_railway_frontend_origin_for_cors(monkeypatch: p
     assert "cache-control" in allowed_headers
     assert "content-type" in allowed_headers
     get_settings.cache_clear()
+
+
+def test_production_deployment_rejects_condocharge_dev_sqlite(monkeypatch: pytest.MonkeyPatch) -> None:
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_DEPLOYMENT", "production")
+    monkeypatch.setenv("CONDOCHARGE_DATABASE_URL", "sqlite+pysqlite:///./condocharge_dev.sqlite3")
+    monkeypatch.setenv("CONDOCHARGE_JWT_SECRET_KEY", "this-is-a-safe-production-secret-1234567890")
+
+    with pytest.raises(RuntimeError, match="condocharge_dev\\.sqlite3"):
+        create_app()
+
+    get_settings.cache_clear()
+
+
+def test_production_deployment_requires_explicit_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_DEPLOYMENT", "production")
+    monkeypatch.delenv("CONDOCHARGE_DATABASE_URL", raising=False)
+    monkeypatch.setenv("CONDOCHARGE_JWT_SECRET_KEY", "this-is-a-safe-production-secret-1234567890")
+
+    with pytest.raises(RuntimeError, match="must be explicitly set"):
+        create_app()
+
+    get_settings.cache_clear()
+
+
+def test_production_deployment_accepts_pilot_real_sqlite(monkeypatch: pytest.MonkeyPatch) -> None:
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_DEPLOYMENT", "production")
+    monkeypatch.setenv("CONDOCHARGE_DATABASE_URL", "sqlite+pysqlite:///./pilot_real.sqlite3")
+    monkeypatch.setenv("CONDOCHARGE_JWT_SECRET_KEY", "this-is-a-safe-production-secret-1234567890")
+
+    created = create_app()
+
+    assert created.title == "CondoCharge"
+    get_settings.cache_clear()

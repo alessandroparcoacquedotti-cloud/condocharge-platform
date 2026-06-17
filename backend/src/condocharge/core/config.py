@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DEFAULT_PRODUCTION_CORS_ORIGINS = (
     "https://shimmering-quietude-production.up.railway.app",
 )
+DEFAULT_DEV_DATABASE_URL = "sqlite+pysqlite:///./condocharge_dev.sqlite3"
 
 
 class Settings(BaseSettings):
@@ -19,11 +20,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    deployment: str = Field(default="demo")
     env: str = Field(default="development")
     api_host: str = Field(default="0.0.0.0")
     api_port: int = Field(default=8000)
 
-    database_url: str = Field(default="sqlite+pysqlite:///./condocharge_dev.sqlite3")
+    database_url: str = Field(default=DEFAULT_DEV_DATABASE_URL)
 
     jwt_secret_key: str = Field(default="change-me")
     jwt_algorithm: str = Field(default="HS256")
@@ -53,6 +55,14 @@ class Settings(BaseSettings):
         return self.env.strip().lower()
 
     @property
+    def normalized_deployment(self) -> str:
+        return self.deployment.strip().lower()
+
+    @property
+    def requires_production_deployment_guards(self) -> bool:
+        return self.normalized_deployment == "production"
+
+    @property
     def requires_secure_runtime(self) -> bool:
         return self.normalized_env in {"pilot", "production"}
 
@@ -71,6 +81,23 @@ class Settings(BaseSettings):
 
     def validate_runtime_settings(self) -> None:
         public_url = self.public_url.strip().rstrip("/")
+        database_url = self.database_url.strip()
+        database_url_was_configured = "database_url" in self.model_fields_set
+
+        if self.requires_production_deployment_guards:
+            if not database_url_was_configured or not database_url:
+                raise RuntimeError(
+                    "CONDOCHARGE_DATABASE_URL must be explicitly set for CONDOCHARGE_DEPLOYMENT=production."
+                )
+            lowered_database_url = database_url.lower()
+            if "condocharge_dev.sqlite3" in lowered_database_url:
+                raise RuntimeError(
+                    "CONDOCHARGE_DATABASE_URL cannot reference condocharge_dev.sqlite3 in production deployment."
+                )
+            if "demo.sqlite3" in lowered_database_url:
+                raise RuntimeError(
+                    "CONDOCHARGE_DATABASE_URL cannot reference demo.sqlite3 in production deployment."
+                )
 
         if public_url:
             if self.requires_secure_runtime and not public_url.lower().startswith("https://"):
@@ -88,10 +115,18 @@ class Settings(BaseSettings):
                         "http://192.168.x.x"
                     )
 
+        secret = self.jwt_secret_key.strip()
+        if self.requires_production_deployment_guards and (
+            not secret or secret in {"change-me", "changeme", "default", "secret"}
+        ):
+            raise RuntimeError(
+                "Unsafe CONDOCHARGE_JWT_SECRET_KEY for production deployment. "
+                "Set a strong non-default secret before startup."
+            )
+
         if not self.requires_secure_runtime:
             return
 
-        secret = self.jwt_secret_key.strip()
         if not secret or secret in {"change-me", "changeme", "default", "secret"}:
             raise RuntimeError(
                 "Unsafe CONDOCHARGE_JWT_SECRET_KEY for pilot/production. "
