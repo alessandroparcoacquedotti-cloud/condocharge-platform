@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
+import secrets
+from dataclasses import dataclass
+
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -15,6 +18,54 @@ DbSession = Annotated[Session, Depends(get_db_session)]
 
 _bearer = HTTPBearer(auto_error=False)
 BearerCredentials = Annotated[HTTPAuthorizationCredentials | None, Security(_bearer)]
+
+_agent_bearer = HTTPBearer(auto_error=False)
+AgentBearerCredentials = Annotated[HTTPAuthorizationCredentials | None, Security(_agent_bearer)]
+
+
+@dataclass(frozen=True)
+class AgentPrincipal:
+    agent_id: str
+    condominium_id: int
+
+
+def get_current_agent(request: Request, credentials: AgentBearerCredentials) -> AgentPrincipal:
+    settings = get_settings()
+    if not settings.agent_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Agent disabled")
+
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    token = credentials.credentials.strip()
+    expected_current = settings.agent_token_current.strip()
+    expected_next = settings.agent_token_next.strip()
+    if not expected_current:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid agent token")
+
+    if not secrets.compare_digest(token, expected_current) and not (
+        expected_next and secrets.compare_digest(token, expected_next)
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid agent token")
+
+    agent_id = (request.headers.get("X-CondoCharge-Agent-Id") or "").strip()
+    if not agent_id:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing agent id")
+
+    raw_condo = (request.headers.get("X-CondoCharge-Condominium-Id") or "").strip()
+    try:
+        condominium_id = int(raw_condo)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid condominium id") from None
+
+    allowed = settings.agent_allowed_condominium_id_set
+    if not allowed or condominium_id not in allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    return AgentPrincipal(agent_id=agent_id, condominium_id=condominium_id)
+
+
+CurrentAgent = Annotated[AgentPrincipal, Depends(get_current_agent)]
 
 
 def get_current_user(

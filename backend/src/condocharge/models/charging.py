@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
@@ -57,6 +57,14 @@ class ChargingStation(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="unknown")
     status_source: Mapped[str] = mapped_column(String(32), nullable=False, server_default="last_sync")
     last_sync_at: Mapped[datetime | None] = mapped_column(UtcAwareDateTime(), nullable=True)
+
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    connector_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    rfid_enabled: Mapped[bool | None] = mapped_column(Boolean(), nullable=True)
+    charging_state: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_status_payload_json: Mapped[str | None] = mapped_column(Text(), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

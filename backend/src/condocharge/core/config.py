@@ -50,6 +50,34 @@ class Settings(BaseSettings):
     legrand_username: str = Field(default="")
     legrand_password: str = Field(default="")
 
+    agent_enabled: bool = Field(default=False)
+    agent_token_current: str = Field(default="")
+    agent_token_next: str = Field(default="")
+    agent_allowed_condominium_ids: str = Field(default="")
+    agent_occupancy_source: str = Field(default="live")
+    agent_stale_after_seconds: int = Field(default=90)
+
+    @property
+    def normalized_agent_occupancy_source(self) -> str:
+        value = self.agent_occupancy_source.strip().lower()
+        return value if value in {"live", "db"} else "live"
+
+    @property
+    def agent_allowed_condominium_id_set(self) -> set[int]:
+        raw = self.agent_allowed_condominium_ids.strip()
+        if not raw:
+            return set()
+        out: set[int] = set()
+        for part in raw.replace(";", ",").split(","):
+            p = part.strip()
+            if not p:
+                continue
+            try:
+                out.add(int(p))
+            except ValueError:
+                continue
+        return out
+
     @property
     def normalized_env(self) -> str:
         return self.env.strip().lower()

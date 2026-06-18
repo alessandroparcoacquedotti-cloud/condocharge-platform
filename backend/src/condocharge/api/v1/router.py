@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from condocharge.api.v1.agent import router as agent_router
 from condocharge.api.v1.admin import router as admin_router
 from condocharge.api.v1.admin_email import router as admin_email_router
 from condocharge.api.v1.admin_notifications import router as admin_notifications_router
@@ -16,6 +17,7 @@ from condocharge.api.v1.users import router as users_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(auth_router)
+router.include_router(agent_router)
 router.include_router(admin_router)
 router.include_router(admin_email_router)
 router.include_router(admin_notifications_router)

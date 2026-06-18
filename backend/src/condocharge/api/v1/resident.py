@@ -13,7 +13,8 @@ from condocharge.api.v1._helpers import (
     paginate,
     session_detail_query,
 )
-from condocharge.api.v1.stations import _resolve_legrand_credentials, _stations_live_occupancy
+from condocharge.api.v1.stations import _resolve_legrand_credentials, _stations_db_occupancy, _stations_live_occupancy
+from condocharge.core.config import get_settings
 from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
 from condocharge.models.tenancy import Condominium, ResidentNotificationPreferences
 from condocharge.schemas.api import (
@@ -249,13 +250,17 @@ def resident_station_occupancy(
     current_user: CurrentUser,
 ) -> ResidentStationOccupancyListResponse:
     _require_resident(current_user)
-    credentials = _resolve_legrand_credentials()
     stations = db.scalars(
         select(ChargingStation)
         .where(ChargingStation.condominium_id == current_user.condominium_id)
         .order_by(ChargingStation.id.asc())
     ).all()
-    items = _stations_live_occupancy(stations=stations, credentials=credentials)
+    settings = get_settings()
+    if settings.normalized_agent_occupancy_source == "db":
+        items = _stations_db_occupancy(stations=stations)
+    else:
+        credentials = _resolve_legrand_credentials()
+        items = _stations_live_occupancy(stations=stations, credentials=credentials)
     return ResidentStationOccupancyListResponse(
         items=[
             ResidentStationOccupancyResponse(

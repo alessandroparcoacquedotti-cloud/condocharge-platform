@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import Lock
 from typing import Annotated
 
@@ -167,6 +167,53 @@ def _stations_live_occupancy(
     return [_station_occupancy_snapshot(station=s, credentials=credentials) for s in stations]
 
 
+def _normalize_station_timestamp(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _station_occupancy_snapshot_db(*, station: ChargingStation) -> StationOccupancyResponse:
+    settings = get_settings()
+    now = datetime.now(tz=UTC)
+    last_poll_at = _normalize_station_timestamp(getattr(station, "last_poll_at", None))
+    last_checked_at = last_poll_at if last_poll_at is not None else now
+    stale_after = max(1, int(settings.agent_stale_after_seconds))
+    is_stale = last_poll_at is None or (now - last_poll_at) > timedelta(seconds=stale_after)
+    if is_stale:
+        return StationOccupancyResponse(
+            station_id=station.id,
+            host=station.host,
+            connector_status=None,
+            computed_status="offline",
+            last_checked_at=last_checked_at,
+        )
+
+    raw_connector = getattr(station, "connector_status", None)
+    connector = str(raw_connector) if raw_connector is not None else None
+    known = (station.status or "").strip().lower()
+    if known in {"charging", "occupied"}:
+        computed = "charging"
+    elif known == "available":
+        computed = "available"
+    else:
+        computed = "available"
+
+    return StationOccupancyResponse(
+        station_id=station.id,
+        host=station.host,
+        connector_status=connector,
+        computed_status=computed,
+        last_checked_at=last_checked_at,
+    )
+
+
+def _stations_db_occupancy(*, stations: Sequence[ChargingStation]) -> list[StationOccupancyResponse]:
+    return [_station_occupancy_snapshot_db(station=s) for s in stations]
+
+
 @router.get(
     "",
     response_model=StationListResponse,
@@ -227,14 +274,17 @@ def station_occupancy(
     db: DbSession,
     current_user: NonResidentUser,
 ) -> StationOccupancyListResponse:
-    credentials = _resolve_legrand_credentials()
-
     stations = db.scalars(
         select(ChargingStation)
         .where(ChargingStation.condominium_id == current_user.condominium_id)
         .order_by(ChargingStation.id.asc())
     ).all()
-    items = _stations_live_occupancy(stations=stations, credentials=credentials)
+    settings = get_settings()
+    if settings.normalized_agent_occupancy_source == "db":
+        items = _stations_db_occupancy(stations=stations)
+    else:
+        credentials = _resolve_legrand_credentials()
+        items = _stations_live_occupancy(stations=stations, credentials=credentials)
     return StationOccupancyListResponse(items=items)
 
 
