@@ -1,4 +1,4 @@
-const DEFAULT_PROD_API_BASE_URL = "https://condocharge-platform-production.up.railway.app";
+const DEFAULT_PROD_API_BASE_URL = "https://condocharge-prod.up.railway.app";
 
 function normalizeString(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -6,9 +6,8 @@ function normalizeString(value: unknown): string {
 }
 
 function resolveApiBaseUrl(): string {
-  if (import.meta.env.DEV) {
-    return normalizeString(import.meta.env.VITE_API_BASE_URL);
-  }
+  const configured = normalizeString(import.meta.env.VITE_API_BASE_URL);
+  if (configured) return configured;
   return DEFAULT_PROD_API_BASE_URL;
 }
 
