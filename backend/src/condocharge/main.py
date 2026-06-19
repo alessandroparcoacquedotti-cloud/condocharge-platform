@@ -11,6 +11,10 @@ from condocharge.api.router import api_router
 from condocharge.app.services.resident_notification_service import (
     StationAvailabilityNotificationPoller,
 )
+from condocharge.app.services.telegram_notification_service import (
+    TelegramAgentStatusNotificationPoller,
+    TelegramStationAvailabilityNotificationPoller,
+)
 from condocharge.core.config import get_settings
 from condocharge.db.session import (
     RESOLVED_DATABASE_URL,
@@ -74,13 +78,13 @@ def create_app() -> FastAPI:
 
         if settings.notifications_enabled:
             stop_event = Event()
-            poller = StationAvailabilityNotificationPoller(
+            email_poller = StationAvailabilityNotificationPoller(
                 db_factory=SessionLocal,
                 settings=settings,
             )
             thread = Thread(
                 target=_run_notification_poller,
-                args=(poller, stop_event, settings.notification_poll_interval_seconds),
+                args=(email_poller, stop_event, settings.notification_poll_interval_seconds),
                 name="condocharge-notification-poller",
                 daemon=True,
             )
@@ -92,14 +96,58 @@ def create_app() -> FastAPI:
                 settings.notification_poll_interval_seconds,
             )
 
+            if settings.telegram_bot_token.strip():
+                telegram_stop_event = Event()
+                telegram_station_poller = TelegramStationAvailabilityNotificationPoller(
+                    db_factory=SessionLocal,
+                    settings=settings,
+                )
+                telegram_agent_poller = TelegramAgentStatusNotificationPoller(
+                    db_factory=SessionLocal,
+                    settings=settings,
+                )
+                station_thread = Thread(
+                    target=_run_notification_poller,
+                    args=(telegram_station_poller, telegram_stop_event, settings.notification_poll_interval_seconds),
+                    name="condocharge-telegram-station-poller",
+                    daemon=True,
+                )
+                agent_thread = Thread(
+                    target=_run_notification_poller,
+                    args=(telegram_agent_poller, telegram_stop_event, settings.notification_poll_interval_seconds),
+                    name="condocharge-telegram-agent-poller",
+                    daemon=True,
+                )
+                station_thread.start()
+                agent_thread.start()
+                app.state.telegram_notification_poller_stop_event = telegram_stop_event
+                app.state.telegram_station_poller_thread = station_thread
+                app.state.telegram_agent_poller_thread = agent_thread
+                logger.info(
+                    "telegram notification pollers enabled interval_seconds=%s",
+                    settings.notification_poll_interval_seconds,
+                )
+
     @app.on_event("shutdown")
     def _shutdown_notification_poller() -> None:
         stop_event: Event | None = getattr(app.state, "notification_poller_stop_event", None)
         thread: Thread | None = getattr(app.state, "notification_poller_thread", None)
         if stop_event is None or thread is None:
-            return
-        stop_event.set()
-        thread.join(timeout=5)
+            stop_event = None
+        if stop_event is not None:
+            stop_event.set()
+        if thread is not None:
+            thread.join(timeout=5)
+
+        telegram_stop_event: Event | None = getattr(app.state, "telegram_notification_poller_stop_event", None)
+        station_thread: Thread | None = getattr(app.state, "telegram_station_poller_thread", None)
+        agent_thread: Thread | None = getattr(app.state, "telegram_agent_poller_thread", None)
+        if telegram_stop_event is not None:
+            telegram_stop_event.set()
+        if station_thread is not None:
+            station_thread.join(timeout=5)
+        if agent_thread is not None:
+            agent_thread.join(timeout=5)
     return app
 
 

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from condocharge.schemas.api import ResidentSessionResponse
 from condocharge.schemas.auth import AppUserResponse
+from condocharge.schemas.telegram import TelegramLinkStatusResponse
 
 
 class ResidentCardResponse(BaseModel):
@@ -126,10 +127,18 @@ class AdminRfidUserRow(BaseModel):
 
 class AdminSettingsResponse(BaseModel):
     energy_price_eur_per_kwh: float
+    telegram_station_available_enabled: bool
+    telegram_charging_completed_enabled: bool
+    telegram_agent_offline_enabled: bool
+    telegram_agent_recovered_enabled: bool
 
 
 class UpdateAdminSettingsRequest(BaseModel):
     energy_price_eur_per_kwh: float = Field(ge=0)
+    telegram_station_available_enabled: bool = True
+    telegram_charging_completed_enabled: bool = True
+    telegram_agent_offline_enabled: bool = True
+    telegram_agent_recovered_enabled: bool = True
 
 
 class UpdateResidentRequest(BaseModel):
@@ -155,12 +164,16 @@ class ResidentNotificationPreferencesResponse(BaseModel):
     charging_completed: bool
     station_available: bool
     station_back_online: bool
+    agent_offline: bool
+    agent_recovered: bool
 
 
 class ResidentNotificationPreferencesUpdateRequest(BaseModel):
     charging_completed: bool
     station_available: bool
     station_back_online: bool
+    agent_offline: bool
+    agent_recovered: bool
 
 
 class ResidentProfileResponse(BaseModel):
@@ -172,6 +185,7 @@ class ResidentProfileResponse(BaseModel):
     phone_number: str | None = None
     linked_cards: list[ResidentCardResponse]
     notification_preferences: ResidentNotificationPreferencesResponse
+    telegram: TelegramLinkStatusResponse
 
 
 class UpdateResidentProfileRequest(BaseModel):

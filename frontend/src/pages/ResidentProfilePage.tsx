@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { endpoints } from "../shared/api/endpoints";
-import type { ResidentNotificationPreferencesUpdate, ResidentProfileResponse } from "../shared/api/types";
+import type { ResidentNotificationPreferencesUpdate, ResidentProfileResponse, TelegramLinkIssueResponse } from "../shared/api/types";
 import { useQuery } from "../shared/hooks/useQuery";
 import { ErrorState, LoadingState, PageHead } from "../shared/ui";
 
@@ -17,10 +17,15 @@ export default function ResidentProfilePage() {
     charging_completed: true,
     station_available: true,
     station_back_online: false,
+    agent_offline: true,
+    agent_recovered: true,
   });
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPrefs, setSavingPrefs] = useState(false);
+  const [linkingTelegram, setLinkingTelegram] = useState(false);
+  const [unlinkingTelegram, setUnlinkingTelegram] = useState(false);
+  const [telegramIssue, setTelegramIssue] = useState<TelegramLinkIssueResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -32,6 +37,8 @@ export default function ResidentProfilePage() {
       charging_completed: query.data.notification_preferences.charging_completed,
       station_available: query.data.notification_preferences.station_available,
       station_back_online: query.data.notification_preferences.station_back_online,
+      agent_offline: query.data.notification_preferences.agent_offline,
+      agent_recovered: query.data.notification_preferences.agent_recovered,
     });
   }, [query.data]);
 
@@ -67,6 +74,38 @@ export default function ResidentProfilePage() {
       setError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Impossibile aggiornare le preferenze");
     } finally {
       setSavingPrefs(false);
+    }
+  }
+
+  async function issueTelegramLink() {
+    setError(null);
+    setMessage(null);
+    setLinkingTelegram(true);
+    try {
+      const payload = await endpoints.issueResidentTelegramLink();
+      setTelegramIssue(payload);
+      setMessage("Link Telegram generato.");
+      query.refetch();
+    } catch (err) {
+      setError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Impossibile generare il link Telegram");
+    } finally {
+      setLinkingTelegram(false);
+    }
+  }
+
+  async function unlinkTelegram() {
+    setError(null);
+    setMessage(null);
+    setUnlinkingTelegram(true);
+    try {
+      await endpoints.unlinkResidentTelegram();
+      setTelegramIssue(null);
+      setMessage("Telegram scollegato.");
+      query.refetch();
+    } catch (err) {
+      setError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Impossibile scollegare Telegram");
+    } finally {
+      setUnlinkingTelegram(false);
     }
   }
 
@@ -156,14 +195,53 @@ export default function ResidentProfilePage() {
                 />
                 <span>Colonnina tornata online</span>
               </label>
+              <label className="row" style={{ justifyContent: "flex-start" }}>
+                <input
+                  type="checkbox"
+                  checked={prefs.agent_offline}
+                  onChange={(e) => setPrefs((v) => ({ ...v, agent_offline: e.target.checked }))}
+                />
+                <span>Agente offline</span>
+              </label>
+              <label className="row" style={{ justifyContent: "flex-start" }}>
+                <input
+                  type="checkbox"
+                  checked={prefs.agent_recovered}
+                  onChange={(e) => setPrefs((v) => ({ ...v, agent_recovered: e.target.checked }))}
+                />
+                <span>Agente ripristinato</span>
+              </label>
               <button className="btn" type="submit" disabled={savingPrefs}>
                 {savingPrefs ? "Salvataggio…" : "Salva"}
               </button>
             </form>
+          </div>
+
+          <div className="card" style={{ gridColumn: "span 6" }}>
+            <div className="card-title">Telegram</div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div><strong>Stato:</strong> {query.data.telegram.linked ? "Collegato" : "Non collegato"}</div>
+              <div className="muted">Chat ID: {query.data.telegram.chat_id ?? "-"}</div>
+              <div className="muted">Username Telegram: {query.data.telegram.telegram_username ?? "-"}</div>
+              <div className="muted">Collegato il: {query.data.telegram.linked_at ?? "-"}</div>
+              {telegramIssue?.deep_link_url ? (
+                <a href={telegramIssue.deep_link_url} target="_blank" rel="noreferrer">
+                  Apri il bot Telegram
+                </a>
+              ) : null}
+              {telegramIssue ? <div className="muted">Link valido fino a: {telegramIssue.expires_at}</div> : null}
+            </div>
+            <div className="row" style={{ justifyContent: "flex-start", marginTop: 12 }}>
+              <button className="btn" type="button" onClick={issueTelegramLink} disabled={linkingTelegram}>
+                {linkingTelegram ? "Generazione…" : "Genera link Telegram"}
+              </button>
+              <button className="btn btn-secondary" type="button" onClick={unlinkTelegram} disabled={unlinkingTelegram || !query.data.telegram.linked}>
+                {unlinkingTelegram ? "Scollegamento…" : "Scollega Telegram"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
     </div>
   );
 }
-

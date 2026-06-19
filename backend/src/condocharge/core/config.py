@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     notification_recency_minutes: int = Field(default=30)
     notification_station_cooldown_minutes: int = Field(default=15)
     notification_resident_cooldown_minutes: int = Field(default=5)
+    telegram_bot_token: str = Field(default="")
+    telegram_bot_username: str = Field(default="")
+    telegram_webhook_secret: str = Field(default="")
+    telegram_link_token_ttl_minutes: int = Field(default=30)
+    telegram_request_timeout_seconds: int = Field(default=10)
+    telegram_agent_offline_threshold_seconds: int = Field(default=180)
 
     legrand_username: str = Field(default="")
     legrand_password: str = Field(default="")

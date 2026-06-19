@@ -1,5 +1,6 @@
 import { createApiClient } from "./client";
 import type {
+  AgentStatusResponse,
   AppUserResponse,
   AdminCostReportResponse,
   AdminResidentRow,
@@ -17,6 +18,8 @@ import type {
   BillingPeriodResponse,
   AdminNotificationLogListResponse,
   EmailHealthResponse,
+  AdminTelegramStatusResponse,
+  AdminTelegramTestSendResponse,
   PaymentImportResultResponse,
   ReceiptPayloadResponse,
   ReminderRunResponse,
@@ -31,6 +34,8 @@ import type {
   ReminderPayloadResponse,
   ResidentProfileResponse,
   ResidentSessionListResponse,
+  TelegramLinkIssueResponse,
+  TelegramLinkStatus,
   UpdateResidentProfileRequest,
   ResidentSummaryResponse,
   ResidentNotificationPreferences,
@@ -90,6 +95,9 @@ export const endpoints = {
     if (params.to_date) search.set("to_date", params.to_date);
     const qs = search.toString();
     return api.getJson<DashboardSummaryResponse>(`/api/v1/dashboard/summary${qs ? `?${qs}` : ""}`);
+  },
+  dashboardAgentStatus() {
+    return api.getJson<AgentStatusResponse>("/api/v1/dashboard/agent-status");
   },
   stations(params: ListParams = {}) {
     const search = new URLSearchParams();
@@ -158,8 +166,20 @@ export const endpoints = {
   adminSettings() {
     return api.getJson<AdminSettingsResponse>("/api/v1/admin/settings");
   },
-  updateAdminSettings(params: { energy_price_eur_per_kwh: number }) {
+  updateAdminSettings(params: {
+    energy_price_eur_per_kwh: number;
+    telegram_station_available_enabled: boolean;
+    telegram_charging_completed_enabled: boolean;
+    telegram_agent_offline_enabled: boolean;
+    telegram_agent_recovered_enabled: boolean;
+  }) {
     return api.patchJson<AdminSettingsResponse>("/api/v1/admin/settings", params);
+  },
+  adminTelegramStatus() {
+    return api.getJson<AdminTelegramStatusResponse>("/api/v1/admin/telegram/status");
+  },
+  testAdminTelegram(params: { chat_id: string }) {
+    return api.postJson<AdminTelegramTestSendResponse>("/api/v1/admin/telegram/test-send", params);
   },
   adminNotificationLogs(params: AdminNotificationLogsParams = {}) {
     const search = new URLSearchParams();
@@ -334,6 +354,12 @@ export const endpoints = {
   },
   updateResidentProfile(params: UpdateResidentProfileRequest) {
     return api.patchJson<ResidentProfileResponse>("/api/v1/resident/profile", params);
+  },
+  issueResidentTelegramLink() {
+    return api.postJson<TelegramLinkIssueResponse>("/api/v1/resident/telegram/link", {});
+  },
+  unlinkResidentTelegram() {
+    return api.deleteJson<TelegramLinkStatus>("/api/v1/resident/telegram/link");
   },
   residentBillingStatements() {
     return api.getJson<BillingStatementResponse[]>("/api/v1/resident/billing/statements");

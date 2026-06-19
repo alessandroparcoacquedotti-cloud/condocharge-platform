@@ -13,6 +13,8 @@ from condocharge.api.v1._helpers import (
     paginate,
     session_detail_query,
 )
+from condocharge.app.services.resident_telegram_link_service import ResidentTelegramLinkService
+from condocharge.app.services.telegram_bot_service import TelegramBotService
 from condocharge.api.v1.stations import (
     _resolve_legrand_credentials,
     _status_is_fresh,
@@ -40,6 +42,7 @@ from condocharge.schemas.consumption import (
     ResidentSummaryResponse,
     UpdateResidentProfileRequest,
 )
+from condocharge.schemas.telegram import TelegramLinkIssueResponse, TelegramLinkStatusResponse
 
 router = APIRouter(prefix="/resident", tags=["resident"])
 
@@ -305,11 +308,22 @@ def _get_or_create_preferences(db: DbSession, *, current_user: CurrentUser) -> R
         charging_completed=1,
         station_available=1,
         station_back_online=0,
+        agent_offline=1,
+        agent_recovered=1,
     )
     db.add(prefs)
     db.commit()
     db.refresh(prefs)
     return prefs
+
+
+def _telegram_status(user: CurrentUser) -> TelegramLinkStatusResponse:
+    return TelegramLinkStatusResponse(
+        linked=bool((user.telegram_chat_id or "").strip()),
+        chat_id=user.telegram_chat_id,
+        telegram_username=user.telegram_username,
+        linked_at=user.telegram_linked_at,
+    )
 
 
 @router.get(
@@ -324,6 +338,8 @@ def get_notification_preferences(db: DbSession, current_user: CurrentUser) -> Re
         charging_completed=bool(prefs.charging_completed),
         station_available=bool(prefs.station_available),
         station_back_online=bool(prefs.station_back_online),
+        agent_offline=bool(prefs.agent_offline),
+        agent_recovered=bool(prefs.agent_recovered),
     )
 
 
@@ -342,12 +358,16 @@ def update_notification_preferences(
     prefs.charging_completed = 1 if body.charging_completed else 0
     prefs.station_available = 1 if body.station_available else 0
     prefs.station_back_online = 1 if body.station_back_online else 0
+    prefs.agent_offline = 1 if body.agent_offline else 0
+    prefs.agent_recovered = 1 if body.agent_recovered else 0
     db.commit()
     db.refresh(prefs)
     return ResidentNotificationPreferencesResponse(
         charging_completed=bool(prefs.charging_completed),
         station_available=bool(prefs.station_available),
         station_back_online=bool(prefs.station_back_online),
+        agent_offline=bool(prefs.agent_offline),
+        agent_recovered=bool(prefs.agent_recovered),
     )
 
 
@@ -372,7 +392,10 @@ def get_profile(db: DbSession, current_user: CurrentUser) -> ResidentProfileResp
             charging_completed=bool(prefs.charging_completed),
             station_available=bool(prefs.station_available),
             station_back_online=bool(prefs.station_back_online),
+            agent_offline=bool(prefs.agent_offline),
+            agent_recovered=bool(prefs.agent_recovered),
         ),
+        telegram=_telegram_status(current_user),
     )
 
 
@@ -390,3 +413,38 @@ def update_profile(db: DbSession, current_user: CurrentUser, body: UpdateResiden
     db.commit()
     db.refresh(current_user)
     return get_profile(db, current_user)
+
+
+@router.post(
+    "/telegram/link",
+    response_model=TelegramLinkIssueResponse,
+    summary="Issue a Telegram deep link for the current resident",
+)
+def issue_telegram_link(db: DbSession, current_user: CurrentUser) -> TelegramLinkIssueResponse:
+    _require_resident(current_user)
+    settings = get_settings()
+    bot_service = TelegramBotService(settings=settings)
+    service = ResidentTelegramLinkService(
+        db=db,
+        settings=settings,
+        deep_link_builder=lambda token: bot_service.build_deep_link(token=token),
+    )
+    issue = service.issue_link(resident=current_user, commit=True)
+    return TelegramLinkIssueResponse(
+        expires_at=issue.expires_at,
+        deep_link_url=issue.deep_link_url,
+        bot_username=settings.telegram_bot_username.strip().lstrip("@") or None,
+    )
+
+
+@router.delete(
+    "/telegram/link",
+    response_model=TelegramLinkStatusResponse,
+    summary="Unlink Telegram from the current resident",
+)
+def unlink_telegram(db: DbSession, current_user: CurrentUser) -> TelegramLinkStatusResponse:
+    _require_resident(current_user)
+    settings = get_settings()
+    service = ResidentTelegramLinkService(db=db, settings=settings)
+    resident = service.unlink(resident=current_user)
+    return _telegram_status(resident)

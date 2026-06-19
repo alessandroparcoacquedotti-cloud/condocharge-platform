@@ -163,6 +163,20 @@ export type TopUserByEnergy = {
   session_count: number;
 };
 
+export type AgentStatusResponse = {
+  agent_id: string | null;
+  online: boolean;
+  health_color: "green" | "yellow" | "red" | string;
+  last_heartbeat: string | null;
+  last_station_update: string | null;
+  last_session_import: string | null;
+  heartbeat_count: number;
+  polling_count: number;
+  import_count: number;
+  retry_count: number;
+  failure_count: number;
+};
+
 export type DashboardSummaryResponse = {
   total_sessions: number;
   total_energy_wh: number;
@@ -171,6 +185,7 @@ export type DashboardSummaryResponse = {
   total_stations: number;
   latest_session: SessionResponse | null;
   top_users_by_energy: TopUserByEnergy[];
+  agent_status: AgentStatusResponse;
 };
 
 export type CondominiumResponse = {
@@ -257,9 +272,24 @@ export type ResidentNotificationPreferences = {
   charging_completed: boolean;
   station_available: boolean;
   station_back_online: boolean;
+  agent_offline: boolean;
+  agent_recovered: boolean;
 };
 
 export type ResidentNotificationPreferencesUpdate = ResidentNotificationPreferences;
+
+export type TelegramLinkStatus = {
+  linked: boolean;
+  chat_id: string | null;
+  telegram_username: string | null;
+  linked_at: string | null;
+};
+
+export type TelegramLinkIssueResponse = {
+  expires_at: string;
+  deep_link_url: string | null;
+  bot_username: string | null;
+};
 
 export type AdminResidentRow = {
   app_user_id: number;
@@ -323,6 +353,7 @@ export type ResidentProfileResponse = {
   phone_number: string | null;
   linked_cards: ResidentCard[];
   notification_preferences: ResidentNotificationPreferences;
+  telegram: TelegramLinkStatus;
 };
 
 export type UpdateResidentProfileRequest = {
@@ -340,6 +371,10 @@ export type AdminRfidUserRow = {
 
 export type AdminSettingsResponse = {
   energy_price_eur_per_kwh: number;
+  telegram_station_available_enabled: boolean;
+  telegram_charging_completed_enabled: boolean;
+  telegram_agent_offline_enabled: boolean;
+  telegram_agent_recovered_enabled: boolean;
 };
 
 export type BillingStatementResponse = {
@@ -627,6 +662,22 @@ export type TestEmailResponse = {
   email_enabled: boolean;
   delivery_status: string;
   attachments: EmailAttachmentResponse[];
+};
+
+export type AdminTelegramStatusResponse = {
+  status: "disabled" | "ok" | "error" | string;
+  configured: boolean;
+  bot_username: string | null;
+  webhook_path: string;
+  message: string | null;
+};
+
+export type AdminTelegramTestSendResponse = {
+  chat_id: string;
+  delivery_status: string;
+  telegram_enabled: boolean;
+  message_preview: string;
+  provider_message_id: string | null;
 };
 
 export type CostByResidentRow = {

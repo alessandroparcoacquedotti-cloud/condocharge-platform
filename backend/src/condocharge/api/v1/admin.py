@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.sql.elements import ColumnElement
 
 from condocharge.api.deps import AdminUser, DbSession
+from condocharge.api.v1.stations import _map_occupancy_status
 from condocharge.app.integrations.base.models import ConnectorStatus, StationTarget, StationVendor
 from condocharge.app.integrations.legrand.driver import LegrandGreenUpDriver
 from condocharge.app.services.email_service import EmailDeliveryError
@@ -485,7 +486,13 @@ def list_rfid_users(db: DbSession, admin_user: AdminUser) -> list[AdminRfidUserR
     summary="Get condominium admin settings",
 )
 def get_admin_settings(admin_user: AdminUser) -> AdminSettingsResponse:
-    return AdminSettingsResponse(energy_price_eur_per_kwh=float(admin_user.condominium.energy_price_eur_per_kwh))
+    return AdminSettingsResponse(
+        energy_price_eur_per_kwh=float(admin_user.condominium.energy_price_eur_per_kwh),
+        telegram_station_available_enabled=bool(admin_user.condominium.telegram_station_available_enabled),
+        telegram_charging_completed_enabled=bool(admin_user.condominium.telegram_charging_completed_enabled),
+        telegram_agent_offline_enabled=bool(admin_user.condominium.telegram_agent_offline_enabled),
+        telegram_agent_recovered_enabled=bool(admin_user.condominium.telegram_agent_recovered_enabled),
+    )
 
 
 @router.patch(
@@ -499,9 +506,19 @@ def update_admin_settings(
     admin_user: AdminUser,
 ) -> AdminSettingsResponse:
     admin_user.condominium.energy_price_eur_per_kwh = Decimal(str(body.energy_price_eur_per_kwh))
+    admin_user.condominium.telegram_station_available_enabled = 1 if body.telegram_station_available_enabled else 0
+    admin_user.condominium.telegram_charging_completed_enabled = 1 if body.telegram_charging_completed_enabled else 0
+    admin_user.condominium.telegram_agent_offline_enabled = 1 if body.telegram_agent_offline_enabled else 0
+    admin_user.condominium.telegram_agent_recovered_enabled = 1 if body.telegram_agent_recovered_enabled else 0
     db.commit()
     db.refresh(admin_user.condominium)
-    return AdminSettingsResponse(energy_price_eur_per_kwh=float(admin_user.condominium.energy_price_eur_per_kwh))
+    return AdminSettingsResponse(
+        energy_price_eur_per_kwh=float(admin_user.condominium.energy_price_eur_per_kwh),
+        telegram_station_available_enabled=bool(admin_user.condominium.telegram_station_available_enabled),
+        telegram_charging_completed_enabled=bool(admin_user.condominium.telegram_charging_completed_enabled),
+        telegram_agent_offline_enabled=bool(admin_user.condominium.telegram_agent_offline_enabled),
+        telegram_agent_recovered_enabled=bool(admin_user.condominium.telegram_agent_recovered_enabled),
+    )
 
 
 @router.post(
@@ -569,22 +586,20 @@ def poll_stations(db: DbSession, body: PollStationsRequest, admin_user: AdminUse
                 )
                 observed_at = snapshot.observed_at
                 connector = snapshot.connectors[0].status if snapshot.connectors else ConnectorStatus.UNKNOWN
-                if snapshot.availability == "offline":
-                    computed = "offline"
-                elif connector == ConnectorStatus.CHARGING:
-                    computed = "charging"
-                elif connector == ConnectorStatus.OCCUPIED:
-                    computed = "occupied"
-                elif connector == ConnectorStatus.AVAILABLE:
-                    computed = "available"
-                else:
-                    computed = "online"
+                availability = str(snapshot.availability)
+                raw_status = "offline" if availability == "offline" else str(connector).lower()
+                computed = _map_occupancy_status(
+                    connector_status=connector,
+                    station_status=raw_status,
+                    availability=availability,
+                    reachable=availability != "offline",
+                )
 
-                station.status = computed
+                station.status = raw_status
                 station.status_source = "polling"
                 station.last_sync_at = observed_at
                 station_runtime = cast(Any, station)
-                station_runtime.active_session = computed == "charging"
+                station_runtime.active_session = str(connector).lower() == "charging"
                 station_runtime.active_session_source = "polling"
                 items.append(
                     PolledStationResponse(
