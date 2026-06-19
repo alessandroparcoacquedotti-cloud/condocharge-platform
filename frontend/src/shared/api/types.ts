@@ -81,6 +81,11 @@ export type StationResponse = {
   status: string | null;
   status_source: string | null;
   last_sync_at: string | null;
+  last_seen_at: string | null;
+  last_poll_at: string | null;
+  connector_status: string | null;
+  charging_state: string | null;
+  status_is_fresh: boolean;
   active_session: boolean | null;
   active_session_source: string | null;
 };
@@ -91,6 +96,7 @@ export type StationOccupancyResponse = {
   connector_status: string | null;
   computed_status: string;
   last_checked_at: string;
+  source: string;
 };
 
 export type StationOccupancyListResponse = {
@@ -101,6 +107,7 @@ export type ResidentStationOccupancyResponse = {
   station_id: number;
   computed_status: string;
   last_checked_at: string;
+  source: string;
 };
 
 export type ResidentStationOccupancyListResponse = {
@@ -232,7 +239,13 @@ export type ResidentStationStatus = {
   id: number;
   name: string | null;
   known_status: string | null;
+  status_source: string | null;
   last_sync_at: string | null;
+  last_seen_at: string | null;
+  last_poll_at: string | null;
+  connector_status: string | null;
+  charging_state: string | null;
+  status_is_fresh: boolean;
   last_charge: ResidentStationLastCharge | null;
 };
 

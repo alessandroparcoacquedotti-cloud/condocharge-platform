@@ -7,11 +7,43 @@ import { ErrorState, LoadingState, PageHead, formatDateTime, formatKwhFromWh } f
 
 const DEFAULT_LIMIT = 20;
 
+function normalizeStatus(value: string | null | undefined) {
+  const s = (value ?? "").toLowerCase();
+  if (s === "busy" || s === "charging" || s === "occupied") return "busy";
+  if (s === "free" || s === "available") return "free";
+  if (s === "unavailable" || s === "offline" || s === "faulted" || s === "unknown" || s === "unreachable" || s === "degraded") {
+    return "unavailable";
+  }
+  return null;
+}
+
 function occupancyBadge(computed: string | null | undefined) {
   const s = (computed ?? "").toLowerCase();
-  if (s === "charging") return { label: "🔴 Charging", tone: "is-danger" as const };
-  if (s === "offline") return { label: "⚫ Offline", tone: "is-danger" as const };
-  return { label: "🟢 Available", tone: "is-ok" as const };
+  if (s === "busy" || s === "charging" || s === "occupied") return { label: "🔴 Busy", tone: "is-danger" as const };
+  if (s === "free" || s === "available") return { label: "🟢 Free", tone: "is-ok" as const };
+  return { label: "⚫ Unavailable", tone: "is-danger" as const };
+}
+
+function resolveDisplayedStatus(
+  station: { status: string | null; status_is_fresh: boolean },
+  live?: { computed_status: string; source: string } | null,
+) {
+  const known = normalizeStatus(station.status);
+  const liveStatus = normalizeStatus(live?.computed_status);
+  if (live?.source === "agent" && liveStatus) return liveStatus;
+  if (station.status_is_fresh && known && liveStatus === "unavailable") return known;
+  return liveStatus ?? known;
+}
+
+function resolveDisplayedCheckedAt(
+  station: { status: string | null; status_is_fresh: boolean; last_seen_at: string | null; last_poll_at: string | null; last_sync_at: string | null },
+  live?: { computed_status: string; source: string; last_checked_at: string } | null,
+) {
+  if (live?.source === "agent") return live.last_checked_at;
+  if (station.status_is_fresh && normalizeStatus(station.status) && normalizeStatus(live?.computed_status) === "unavailable") {
+    return station.last_seen_at ?? station.last_poll_at ?? station.last_sync_at;
+  }
+  return live?.last_checked_at ?? station.last_seen_at ?? station.last_poll_at ?? station.last_sync_at;
 }
 
 export default function StationsPage() {
@@ -79,21 +111,28 @@ export default function StationsPage() {
                     <td>
                       {(() => {
                         const live = occupancyById.get(s.id);
-                        const badge = occupancyBadge(live?.computed_status);
+                        const displayStatus = resolveDisplayedStatus(s, live);
+                        const checkedAt = resolveDisplayedCheckedAt(s, live);
+                        const badge = occupancyBadge(displayStatus ?? "offline");
                         return (
                           <div style={{ display: "grid", gap: 6 }}>
                             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                               <span className={badge.tone ? `pill ${badge.tone}` : "pill"}>{badge.label}</span>
                               <span className="pill">
-                                live: <span className="muted">{live ? formatDateTime(live.last_checked_at) : "-"}</span>
+                                Last status check:{" "}
+                                <span className="muted">{formatDateTime(checkedAt)}</span>
                               </span>
                             </div>
                             <div className="muted" style={{ fontSize: 12 }}>
-                              import: {formatDateTime(s.last_sync_at)} • sessione attiva: {String(!!s.active_session)} ({s.active_session_source ?? "sconosciuto"})
+                              Last synchronization: {formatDateTime(s.last_sync_at)} • sessione attiva:{" "}
+                              {String(!!s.active_session)} ({s.active_session_source ?? "sconosciuto"})
                             </div>
-                            {live?.connector_status ? (
+                            <div className="muted" style={{ fontSize: 12 }}>
+                              Last charging session: {formatDateTime(s.latest_session?.end_time)}
+                            </div>
+                            {(live?.connector_status ?? s.connector_status) ? (
                               <div className="muted" style={{ fontSize: 12 }}>
-                                connector_status: {live.connector_status}
+                                connector_status: {live?.connector_status ?? s.connector_status}
                               </div>
                             ) : null}
                           </div>

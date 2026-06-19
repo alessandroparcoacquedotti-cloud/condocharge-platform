@@ -94,6 +94,11 @@ class StationResponse(BaseModel):
     status: str | None = None
     status_source: str | None = None
     last_sync_at: datetime | None = None
+    last_seen_at: datetime | None = None
+    last_poll_at: datetime | None = None
+    connector_status: str | None = None
+    charging_state: str | None = None
+    status_is_fresh: bool = False
     active_session: bool | None = None
     active_session_source: str | None = None
 
@@ -104,6 +109,7 @@ class StationOccupancyResponse(BaseModel):
     connector_status: str | None = None
     computed_status: str
     last_checked_at: datetime
+    source: str
 
 
 class StationOccupancyListResponse(BaseModel):
@@ -114,6 +120,7 @@ class ResidentStationOccupancyResponse(BaseModel):
     station_id: int
     computed_status: str
     last_checked_at: datetime
+    source: str
 
 
 class ResidentStationOccupancyListResponse(BaseModel):
@@ -150,6 +157,20 @@ class TopUserByEnergyResponse(BaseModel):
     session_count: int
 
 
+class AgentStatusResponse(BaseModel):
+    agent_id: str | None = None
+    online: bool
+    health_color: str
+    last_heartbeat: datetime | None = None
+    last_station_update: datetime | None = None
+    last_session_import: datetime | None = None
+    heartbeat_count: int
+    polling_count: int
+    import_count: int
+    retry_count: int
+    failure_count: int
+
+
 class DashboardSummaryResponse(BaseModel):
     total_sessions: int
     total_energy_wh: int
@@ -158,6 +179,7 @@ class DashboardSummaryResponse(BaseModel):
     total_stations: int
     latest_session: SessionResponse | None = None
     top_users_by_energy: list[TopUserByEnergyResponse]
+    agent_status: AgentStatusResponse
 
 
 class ResidentStationLastCharge(BaseModel):
@@ -170,7 +192,13 @@ class ResidentStationStatusResponse(BaseModel):
     id: int
     name: str | None = None
     known_status: str | None = None
+    status_source: str | None = None
     last_sync_at: datetime | None = None
+    last_seen_at: datetime | None = None
+    last_poll_at: datetime | None = None
+    connector_status: str | None = None
+    charging_state: str | None = None
+    status_is_fresh: bool = False
     last_charge: ResidentStationLastCharge | None = None
 
 

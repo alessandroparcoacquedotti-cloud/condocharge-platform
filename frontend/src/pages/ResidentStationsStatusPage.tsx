@@ -8,12 +8,53 @@ import { ErrorState, LoadingState, PageHead, formatAgeFromNow, formatDateTime, f
 const REFRESH_MS = 10000;
 const STALE_AFTER_MS = 30000;
 
+function normalizeStatus(value: string | null | undefined) {
+  const s = (value ?? "").toLowerCase();
+  if (s === "busy" || s === "charging" || s === "occupied") return "busy";
+  if (s === "free" || s === "available") return "free";
+  if (s === "unavailable" || s === "offline" || s === "faulted" || s === "unknown" || s === "unreachable" || s === "degraded") {
+    return "unavailable";
+  }
+  return null;
+}
+
 function occupancyBadge(computed: string | null | undefined, opts: { checking: boolean }) {
   const s = (computed ?? "").toLowerCase();
-  if (s === "charging") return { label: "🔴 CHARGING", tone: "is-danger" as const };
-  if (s === "offline") return { label: "⚫ UNAVAILABLE", tone: "is-danger" as const };
+  if (s === "busy" || s === "charging" || s === "occupied") return { label: "🔴 BUSY", tone: "is-danger" as const };
+  if (s === "unavailable" || s === "offline" || s === "faulted" || s === "unknown" || s === "unreachable" || s === "degraded") {
+    return { label: "⚫ UNAVAILABLE", tone: "is-danger" as const };
+  }
   if (opts.checking) return { label: "🟡 CHECKING STATUS", tone: "" as const };
   return { label: "🟢 FREE", tone: "is-ok" as const };
+}
+
+function resolveDisplayedStatus(
+  knownStatus: string | null | undefined,
+  statusIsFresh: boolean,
+  live?: { computed_status: string; source: string } | null,
+) {
+  const known = normalizeStatus(knownStatus);
+  const liveStatus = normalizeStatus(live?.computed_status);
+  if (live?.source === "agent" && liveStatus) return liveStatus;
+  if (statusIsFresh && known && liveStatus === "unavailable") return known;
+  return liveStatus ?? known;
+}
+
+function resolveDisplayedCheckedAt(
+  station: {
+    status_is_fresh: boolean;
+    known_status: string | null;
+    last_seen_at: string | null;
+    last_poll_at: string | null;
+    last_sync_at: string | null;
+  },
+  live?: { computed_status: string; source: string; last_checked_at: string } | null,
+) {
+  if (live?.source === "agent") return live.last_checked_at;
+  if (station.status_is_fresh && normalizeStatus(station.known_status) && normalizeStatus(live?.computed_status) === "unavailable") {
+    return station.last_seen_at ?? station.last_poll_at ?? station.last_sync_at;
+  }
+  return live?.last_checked_at ?? station.last_seen_at ?? station.last_poll_at ?? station.last_sync_at;
 }
 
 export default function ResidentStationsStatusPage() {
@@ -41,12 +82,16 @@ export default function ResidentStationsStatusPage() {
         <div className="grid">
           {query.data.items.map((s) => {
             const live = occupancyById.get(s.id);
-            const checkedAtMs = live?.last_checked_at ? new Date(live.last_checked_at).getTime() : null;
+            const displayStatus = resolveDisplayedStatus(s.known_status, s.status_is_fresh, live);
+            const checkedAt = resolveDisplayedCheckedAt(s, live);
+            const checkedAtMs = checkedAt ? new Date(checkedAt).getTime() : null;
             const ageMs = checkedAtMs != null && !Number.isNaN(checkedAtMs) ? Math.max(0, now.getTime() - checkedAtMs) : null;
             const isStale = ageMs != null ? ageMs > STALE_AFTER_MS : true;
             const waitingForLive = occupancyQuery.loading || occupancyQuery.refreshing;
-            const checking = !live || isStale || (waitingForLive && (live?.computed_status ?? "").toLowerCase() === "available");
-            const badge = occupancyBadge(live?.computed_status ?? s.known_status ?? "offline", { checking });
+            const usingFreshKnownStatus =
+              s.status_is_fresh && normalizeStatus(s.known_status) != null && normalizeStatus(live?.computed_status) === "unavailable" && live?.source !== "agent";
+            const checking = !displayStatus || (!usingFreshKnownStatus && (!live || isStale || (waitingForLive && displayStatus === "free")));
+            const badge = occupancyBadge(displayStatus ?? "offline", { checking });
             return (
               <div key={s.id} className="card" style={{ gridColumn: "span 6" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
@@ -56,7 +101,7 @@ export default function ResidentStationsStatusPage() {
                       Ultimo aggiornamento dati: {formatDateTime(s.last_sync_at)}
                     </div>
                     <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                      {live ? `${formatAgeFromNow(live.last_checked_at, now)} (${formatDateTime(live.last_checked_at)})` : "🟡 CHECKING STATUS…"}
+                      {checkedAt ? `${formatAgeFromNow(checkedAt, now)} (${formatDateTime(checkedAt)})` : "🟡 CHECKING STATUS…"}
                     </div>
                   </div>
                   <span className={badge.tone ? `pill ${badge.tone}` : "pill"}>{badge.label}</span>

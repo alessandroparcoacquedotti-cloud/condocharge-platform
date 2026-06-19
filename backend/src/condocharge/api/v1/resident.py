@@ -13,7 +13,13 @@ from condocharge.api.v1._helpers import (
     paginate,
     session_detail_query,
 )
-from condocharge.api.v1.stations import _resolve_legrand_credentials, _stations_db_occupancy, _stations_live_occupancy
+from condocharge.api.v1.stations import (
+    _resolve_legrand_credentials,
+    _status_is_fresh,
+    _stations_db_occupancy,
+    _stations_hybrid_occupancy,
+    _stations_live_occupancy,
+)
 from condocharge.core.config import get_settings
 from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
 from condocharge.models.tenancy import Condominium, ResidentNotificationPreferences
@@ -203,6 +209,8 @@ def resident_rfid_users(db: DbSession, current_user: CurrentUser) -> list[Reside
 )
 def resident_stations(db: DbSession, current_user: CurrentUser) -> ResidentStationStatusListResponse:
     _require_resident(current_user)
+    settings = get_settings()
+    stale_after = max(1, int(getattr(settings, "agent_stale_after_seconds", 180) or 180))
 
     stations = db.scalars(
         select(ChargingStation)
@@ -224,7 +232,13 @@ def resident_stations(db: DbSession, current_user: CurrentUser) -> ResidentStati
                 id=station.id,
                 name=station.name,
                 known_status=station.status,
+                status_source=station.status_source,
                 last_sync_at=station.last_sync_at,
+                last_seen_at=station.last_seen_at,
+                last_poll_at=station.last_poll_at,
+                connector_status=station.connector_status,
+                charging_state=station.charging_state,
+                status_is_fresh=_status_is_fresh(station=station, stale_after_seconds=stale_after),
                 last_charge=(
                     ResidentStationLastCharge(
                         end_time=last_session.end_time,
@@ -258,15 +272,23 @@ def resident_station_occupancy(
     settings = get_settings()
     if settings.normalized_agent_occupancy_source == "db":
         items = _stations_db_occupancy(stations=stations)
-    else:
+    elif settings.normalized_agent_occupancy_source == "live_only":
         credentials = _resolve_legrand_credentials()
         items = _stations_live_occupancy(stations=stations, credentials=credentials)
+    else:
+        credentials = _resolve_legrand_credentials()
+        items = _stations_hybrid_occupancy(
+            stations=stations,
+            credentials=credentials,
+            stale_after_seconds=max(1, int(getattr(settings, "agent_stale_after_seconds", 180) or 180)),
+        )
     return ResidentStationOccupancyListResponse(
         items=[
             ResidentStationOccupancyResponse(
                 station_id=i.station_id,
                 computed_status=i.computed_status,
                 last_checked_at=i.last_checked_at,
+                source=i.source,
             )
             for i in items
         ]

@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from condocharge.api.deps import get_db_session
+from condocharge.api.v1 import resident as resident_api
+from condocharge.api.v1 import stations as stations_api
 from condocharge.core.security import hash_password
 from condocharge.db.base import Base
 from condocharge.main import create_app
-from condocharge.models.charging import ChargingSession, ChargingStation
+from condocharge.models.charging import AgentState, ChargingSession, ChargingStation
 from condocharge.models.tenancy import AppUser, Condominium
 
 
@@ -45,7 +47,14 @@ def _build_client(*, monkeypatch: pytest.MonkeyPatch, occupancy_source: str = "l
             role="admin",
             is_active=1,
         )
-        db.add(admin)
+        resident = AppUser(
+            condominium_id=condo1.id,
+            username="resident",
+            password_hash=hash_password("password123"),
+            role="resident",
+            is_active=1,
+        )
+        db.add_all([admin, resident])
         db.flush()
 
         s1 = ChargingStation(condominium_id=condo1.id, host="192.168.1.200", vendor="legrand_greenup", name="A")
@@ -56,6 +65,7 @@ def _build_client(*, monkeypatch: pytest.MonkeyPatch, occupancy_source: str = "l
             "condo1_id": condo1.id,
             "condo2_id": condo2.id,
             "admin_id": admin.id,
+            "resident_id": resident.id,
             "station1_id": s1.id,
             "station2_id": s2.id,
         }
@@ -81,6 +91,24 @@ def _agent_headers(*, condominium_id: int, token: str = "test-agent-token") -> d
     }
 
 
+def _heartbeat_body() -> dict[str, object]:
+    return {
+        "agent_version": "0.1",
+        "hostname": "mini-pc-agent",
+        "started_at": "2026-06-18T08:00:00Z",
+        "sent_at": "2026-06-18T08:01:00Z",
+        "station_hosts": ["192.168.1.200"],
+        "heartbeat_interval_seconds": 60,
+        "status_poll_interval_seconds": 30,
+        "session_sync_interval_seconds": 300,
+        "heartbeat_count": 12,
+        "polling_count": 24,
+        "import_count": 3,
+        "retry_count": 4,
+        "failure_count": 1,
+    }
+
+
 def _admin_auth_headers(client: TestClient) -> dict[str, str]:
     resp = client.post(
         "/api/v1/auth/login",
@@ -91,23 +119,25 @@ def _admin_auth_headers(client: TestClient) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _resident_auth_headers(client: TestClient) -> dict[str, str]:
+    resp = client.post(
+        "/api/v1/auth/login",
+        json={"username": "resident", "password": "password123", "condominium": "Condo One"},
+    )
+    assert resp.status_code == 200
+    token = resp.json()["token"]["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
 def test_agent_auth_rejects_missing_or_invalid_token(monkeypatch: pytest.MonkeyPatch) -> None:
     client, _, ids = _build_client(monkeypatch=monkeypatch)
 
-    r1 = client.post("/api/v1/agent/heartbeat", json={"agent_version": "0.1", "hostname": "x", "started_at": "2026-06-18T08:00:00Z", "sent_at": "2026-06-18T08:01:00Z", "station_hosts": ["192.168.1.200"], "status_poll_interval_seconds": 30, "session_sync_interval_seconds": 300}, headers={"X-CondoCharge-Agent-Id": "test-agent", "X-CondoCharge-Condominium-Id": str(ids["condo1_id"])})
+    r1 = client.post("/api/v1/agent/heartbeat", json=_heartbeat_body(), headers={"X-CondoCharge-Agent-Id": "test-agent", "X-CondoCharge-Condominium-Id": str(ids["condo1_id"])})
     assert r1.status_code == 401
 
     r2 = client.post(
         "/api/v1/agent/heartbeat",
-        json={
-            "agent_version": "0.1",
-            "hostname": "x",
-            "started_at": "2026-06-18T08:00:00Z",
-            "sent_at": "2026-06-18T08:01:00Z",
-            "station_hosts": ["192.168.1.200"],
-            "status_poll_interval_seconds": 30,
-            "session_sync_interval_seconds": 300,
-        },
+        json=_heartbeat_body(),
         headers=_agent_headers(condominium_id=ids["condo1_id"], token="wrong"),
     )
     assert r2.status_code == 401
@@ -117,18 +147,33 @@ def test_agent_auth_enforces_condominium_scope(monkeypatch: pytest.MonkeyPatch) 
     client, _, ids = _build_client(monkeypatch=monkeypatch)
     r = client.post(
         "/api/v1/agent/heartbeat",
-        json={
-            "agent_version": "0.1",
-            "hostname": "x",
-            "started_at": "2026-06-18T08:00:00Z",
-            "sent_at": "2026-06-18T08:01:00Z",
-            "station_hosts": ["192.168.1.200"],
-            "status_poll_interval_seconds": 30,
-            "session_sync_interval_seconds": 300,
-        },
+        json=_heartbeat_body(),
         headers=_agent_headers(condominium_id=ids["condo2_id"]),
     )
     assert r.status_code == 403
+
+
+def test_heartbeat_persists_latest_agent_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, TestingSessionLocal, ids = _build_client(monkeypatch=monkeypatch)
+
+    resp = client.post(
+        "/api/v1/agent/heartbeat",
+        json=_heartbeat_body(),
+        headers=_agent_headers(condominium_id=ids["condo1_id"]),
+    )
+
+    assert resp.status_code == 200
+    with TestingSessionLocal() as db:
+        state = db.scalar(select(AgentState).where(AgentState.condominium_id == ids["condo1_id"]))
+        assert state is not None
+        assert state.agent_id == "test-agent"
+        assert state.hostname == "mini-pc-agent"
+        assert state.heartbeat_count == 12
+        assert state.polling_count == 24
+        assert state.import_count == 3
+        assert state.retry_count == 4
+        assert state.failure_count == 1
+        assert state.last_heartbeat_at is not None
 
 
 def test_status_ingestion_updates_station_fields(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -272,4 +317,278 @@ def test_db_backed_occupancy_marks_stale_as_offline(monkeypatch: pytest.MonkeyPa
     assert resp.status_code == 200
     items = resp.json()["items"]
     assert len(items) == 1
-    assert items[0]["computed_status"] == "offline"
+    assert items[0]["computed_status"] == "unavailable"
+    assert items[0]["source"] == "db"
+
+
+def test_fresh_agent_status_available_is_authoritative_over_live_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, TestingSessionLocal, ids = _build_client(monkeypatch=monkeypatch, occupancy_source="live")
+    now = datetime.now(tz=UTC)
+
+    with TestingSessionLocal() as db:
+        station = db.get(ChargingStation, ids["station1_id"])
+        assert station is not None
+        station.status = "available"
+        station.status_source = "agent"
+        station.last_seen_at = now
+        station.last_poll_at = now
+        station.connector_status = "available"
+        station.charging_state = "ready"
+        db.commit()
+
+    monkeypatch.setattr(stations_api, "_resolve_legrand_credentials", lambda: None)
+    monkeypatch.setattr(resident_api, "_resolve_legrand_credentials", lambda: None)
+    admin_headers = _admin_auth_headers(client)
+    resident_headers = _resident_auth_headers(client)
+
+    admin_resp = client.get("/api/v1/stations/occupancy", headers=admin_headers)
+    assert admin_resp.status_code == 200
+    admin_item = admin_resp.json()["items"][0]
+    assert admin_item["computed_status"] == "free"
+    assert admin_item["source"] == "agent"
+
+    resident_resp = client.get("/api/v1/resident/stations/occupancy", headers=resident_headers)
+    assert resident_resp.status_code == 200
+    resident_item = resident_resp.json()["items"][0]
+    assert resident_item["computed_status"] == "free"
+    assert resident_item["source"] == "agent"
+
+
+def test_fresh_agent_status_busy_is_authoritative(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, TestingSessionLocal, ids = _build_client(monkeypatch=monkeypatch, occupancy_source="live")
+    now = datetime.now(tz=UTC)
+
+    with TestingSessionLocal() as db:
+        station = db.get(ChargingStation, ids["station1_id"])
+        assert station is not None
+        station.status = "charging"
+        station.status_source = "agent"
+        station.last_seen_at = now
+        station.last_poll_at = now
+        station.connector_status = "charging"
+        station.charging_state = "charging"
+        db.commit()
+
+    monkeypatch.setattr(stations_api, "_resolve_legrand_credentials", lambda: None)
+    monkeypatch.setattr(resident_api, "_resolve_legrand_credentials", lambda: None)
+    admin_headers = _admin_auth_headers(client)
+
+    admin_resp = client.get("/api/v1/stations/occupancy", headers=admin_headers)
+    assert admin_resp.status_code == 200
+    admin_item = admin_resp.json()["items"][0]
+    assert admin_item["computed_status"] == "busy"
+    assert admin_item["source"] == "agent"
+
+
+def test_stale_agent_status_falls_back_to_live_polling(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, TestingSessionLocal, ids = _build_client(monkeypatch=monkeypatch, occupancy_source="live")
+    now = datetime.now(tz=UTC)
+
+    with TestingSessionLocal() as db:
+        station = db.get(ChargingStation, ids["station1_id"])
+        assert station is not None
+        station.status = "available"
+        station.status_source = "agent"
+        station.last_seen_at = now - timedelta(seconds=150)
+        station.last_poll_at = now - timedelta(seconds=150)
+        station.connector_status = "available"
+        db.commit()
+
+    stations_api._live_driver_hosts.clear()
+    monkeypatch.setattr(stations_api, "_resolve_legrand_credentials", lambda: ("user", "password"))
+    monkeypatch.setattr(resident_api, "_resolve_legrand_credentials", lambda: ("user", "password"))
+    monkeypatch.setattr(stations_api._live_driver, "login", lambda host, username, password: None)
+
+    class _FaultedStatus:
+        connector_status = stations_api.ConnectorStatus.FAULTED
+
+    monkeypatch.setattr(stations_api._live_driver, "get_station_status", lambda host: _FaultedStatus())
+    admin_headers = _admin_auth_headers(client)
+    resident_headers = _resident_auth_headers(client)
+
+    admin_resp = client.get("/api/v1/stations/occupancy", headers=admin_headers)
+    assert admin_resp.status_code == 200
+    admin_item = admin_resp.json()["items"][0]
+    assert admin_item["computed_status"] == "unavailable"
+    assert admin_item["source"] == "live"
+
+    resident_resp = client.get("/api/v1/resident/stations/occupancy", headers=resident_headers)
+    assert resident_resp.status_code == 200
+    resident_item = resident_resp.json()["items"][0]
+    assert resident_item["computed_status"] == "unavailable"
+    assert resident_item["source"] == "live"
+
+
+def test_dashboard_agent_status_endpoint_returns_green_yellow_and_red(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, TestingSessionLocal, ids = _build_client(monkeypatch=monkeypatch)
+    headers = _admin_auth_headers(client)
+    now = datetime.now(tz=UTC)
+
+    with TestingSessionLocal() as db:
+        state = AgentState(
+            condominium_id=ids["condo1_id"],
+            agent_id="test-agent",
+            last_heartbeat_at=now - timedelta(seconds=30),
+            last_station_update_at=now - timedelta(seconds=20),
+            last_session_import_at=now - timedelta(minutes=2),
+            heartbeat_count=10,
+            polling_count=20,
+            import_count=3,
+            retry_count=1,
+            failure_count=0,
+        )
+        db.add(state)
+        db.commit()
+
+    green = client.get("/api/v1/dashboard/agent-status", headers=headers)
+    assert green.status_code == 200
+    assert green.json()["health_color"] == "green"
+    assert green.json()["online"] is True
+
+    with TestingSessionLocal() as db:
+        state = db.scalar(select(AgentState).where(AgentState.condominium_id == ids["condo1_id"]))
+        assert state is not None
+        state.last_heartbeat_at = now - timedelta(seconds=120)
+        db.commit()
+
+    yellow = client.get("/api/v1/dashboard/agent-status", headers=headers)
+    assert yellow.status_code == 200
+    assert yellow.json()["health_color"] == "yellow"
+    assert yellow.json()["online"] is True
+
+    with TestingSessionLocal() as db:
+        state = db.scalar(select(AgentState).where(AgentState.condominium_id == ids["condo1_id"]))
+        assert state is not None
+        state.last_heartbeat_at = now - timedelta(seconds=240)
+        db.commit()
+
+    red = client.get("/api/v1/dashboard/agent-status", headers=headers)
+    assert red.status_code == 200
+    assert red.json()["health_color"] == "red"
+    assert red.json()["online"] is False
+
+
+def test_dashboard_summary_includes_persisted_agent_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, TestingSessionLocal, ids = _build_client(monkeypatch=monkeypatch)
+    headers = _admin_auth_headers(client)
+
+    with TestingSessionLocal() as db:
+        db.add(
+            AgentState(
+                condominium_id=ids["condo1_id"],
+                agent_id="test-agent",
+                last_heartbeat_at=datetime.now(tz=UTC),
+                last_station_update_at=datetime.now(tz=UTC),
+                last_session_import_at=datetime.now(tz=UTC),
+                heartbeat_count=7,
+                polling_count=11,
+                import_count=2,
+                retry_count=5,
+                failure_count=1,
+            )
+        )
+        db.commit()
+
+    resp = client.get("/api/v1/dashboard/summary", headers=headers)
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["agent_status"]["agent_id"] == "test-agent"
+    assert payload["agent_status"]["heartbeat_count"] == 7
+    assert payload["agent_status"]["retry_count"] == 5
+
+
+@pytest.mark.parametrize(
+    ("connector_status", "station_status", "expected"),
+    [
+        ("available", "available", "free"),
+        ("charging", "charging", "busy"),
+        ("occupied", "occupied", "busy"),
+        ("faulted", "faulted", "unavailable"),
+        ("unknown", "unknown", "unavailable"),
+        (None, "unreachable", "unavailable"),
+        (None, "degraded", "unavailable"),
+    ],
+)
+def test_db_backed_occupancy_maps_all_hardened_states(
+    monkeypatch: pytest.MonkeyPatch,
+    connector_status: str | None,
+    station_status: str,
+    expected: str,
+) -> None:
+    client, TestingSessionLocal, ids = _build_client(monkeypatch=monkeypatch, occupancy_source="db")
+    admin_headers = _admin_auth_headers(client)
+    resident_headers = _resident_auth_headers(client)
+    now = datetime.now(tz=UTC)
+
+    with TestingSessionLocal() as db:
+        station = db.get(ChargingStation, ids["station1_id"])
+        assert station is not None
+        station.status = station_status
+        station.status_source = "agent"
+        station.last_poll_at = now
+        station.connector_status = connector_status
+        db.commit()
+
+    admin_resp = client.get("/api/v1/stations/occupancy", headers=admin_headers)
+    assert admin_resp.status_code == 200
+    assert admin_resp.json()["items"][0]["computed_status"] == expected
+    assert admin_resp.json()["items"][0]["source"] == "agent"
+
+    resident_resp = client.get("/api/v1/resident/stations/occupancy", headers=resident_headers)
+    assert resident_resp.status_code == 200
+    assert resident_resp.json()["items"][0]["computed_status"] == expected
+    assert resident_resp.json()["items"][0]["source"] == "agent"
+
+
+@pytest.mark.parametrize(
+    ("connector", "expected"),
+    [
+        (stations_api.ConnectorStatus.AVAILABLE, "free"),
+        (stations_api.ConnectorStatus.CHARGING, "busy"),
+        (stations_api.ConnectorStatus.OCCUPIED, "busy"),
+        (stations_api.ConnectorStatus.FAULTED, "unavailable"),
+        (stations_api.ConnectorStatus.UNKNOWN, "unavailable"),
+    ],
+)
+def test_live_occupancy_snapshot_maps_connector_states(
+    monkeypatch: pytest.MonkeyPatch,
+    connector: object,
+    expected: str,
+) -> None:
+    station = ChargingStation(id=1, condominium_id=1, host="192.168.1.200", vendor="legrand_greenup", name="A")
+    stations_api._live_driver_hosts.clear()
+
+    class _FakeStatus:
+        def __init__(self, connector_status: object) -> None:
+            self.connector_status = connector_status
+
+    monkeypatch.setattr(stations_api._live_driver, "login", lambda host, username, password: None)
+    monkeypatch.setattr(stations_api._live_driver, "get_station_status", lambda host: _FakeStatus(connector))
+
+    result = stations_api._station_occupancy_snapshot(
+        station=station,
+        credentials=("user", "password"),
+    )
+
+    assert result.computed_status == expected
+    assert result.source == "live"
+
+
+def test_live_occupancy_snapshot_maps_unreachable_to_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    station = ChargingStation(id=1, condominium_id=1, host="192.168.1.200", vendor="legrand_greenup", name="A")
+    stations_api._live_driver_hosts.clear()
+
+    monkeypatch.setattr(stations_api._live_driver, "login", lambda host, username, password: None)
+
+    def _raise(host: str) -> object:
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(stations_api._live_driver, "get_station_status", _raise)
+
+    result = stations_api._station_occupancy_snapshot(
+        station=station,
+        credentials=("user", "password"),
+    )
+
+    assert result.computed_status == "unavailable"
+    assert result.source == "live"

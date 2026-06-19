@@ -39,6 +39,77 @@ _live_driver = LegrandGreenUpDriver(
 )
 _live_driver_hosts: set[str] = set()
 
+_FREE_OCCUPANCY_STATES = {"available", "free"}
+_BUSY_OCCUPANCY_STATES = {"charging", "occupied", "busy"}
+_UNAVAILABLE_OCCUPANCY_STATES = {
+    "faulted",
+    "unknown",
+    "unreachable",
+    "degraded",
+    "offline",
+    "unavailable",
+}
+
+def _normalize_runtime_state(value: str | ConnectorStatus | None) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    return normalized or None
+
+
+def _station_observed_at(station: ChargingStation) -> datetime | None:
+    timestamps = [
+        _normalize_station_timestamp(getattr(station, "last_seen_at", None)),
+        _normalize_station_timestamp(getattr(station, "last_poll_at", None)),
+    ]
+    values = [value for value in timestamps if value is not None]
+    if not values:
+        return None
+    return max(values)
+
+
+def _status_is_fresh(*, station: ChargingStation, stale_after_seconds: int) -> bool:
+    if _normalize_runtime_state(getattr(station, "status_source", None)) != "agent":
+        return False
+    observed_at = _station_observed_at(station)
+    if observed_at is None:
+        return False
+    now = datetime.now(tz=UTC)
+    return (now - observed_at) <= timedelta(seconds=max(1, stale_after_seconds))
+
+
+def _map_occupancy_status(
+    *,
+    connector_status: str | ConnectorStatus | None = None,
+    station_status: str | None = None,
+    availability: str | None = None,
+    reachable: bool = True,
+) -> str:
+    if not reachable:
+        return "unavailable"
+
+    availability_state = _normalize_runtime_state(availability)
+    if availability_state in _UNAVAILABLE_OCCUPANCY_STATES:
+        return "unavailable"
+
+    connector_state = _normalize_runtime_state(connector_status)
+    if connector_state in _FREE_OCCUPANCY_STATES:
+        return "free"
+    if connector_state in _BUSY_OCCUPANCY_STATES:
+        return "busy"
+    if connector_state in _UNAVAILABLE_OCCUPANCY_STATES:
+        return "unavailable"
+
+    station_state = _normalize_runtime_state(station_status)
+    if station_state in _FREE_OCCUPANCY_STATES:
+        return "free"
+    if station_state in _BUSY_OCCUPANCY_STATES:
+        return "busy"
+    if station_state in _UNAVAILABLE_OCCUPANCY_STATES:
+        return "unavailable"
+
+    return "unavailable"
+
 
 def _read_windows_generic_credential(target_name: str) -> tuple[str, str] | None:
     if sys.platform != "win32":
@@ -119,8 +190,9 @@ def _station_occupancy_snapshot(
             station_id=station.id,
             host=station.host,
             connector_status=None,
-            computed_status="offline",
+            computed_status="unavailable",
             last_checked_at=now,
+            source="live",
         )
 
     try:
@@ -132,13 +204,11 @@ def _station_occupancy_snapshot(
             status = _live_driver.get_station_status(station.host)
         observed_at = datetime.now(tz=UTC)
         connector = status.connector_status or ConnectorStatus.UNKNOWN
-
-        if connector in (ConnectorStatus.CHARGING, ConnectorStatus.OCCUPIED):
-            computed = "charging"
-        elif connector == ConnectorStatus.AVAILABLE:
-            computed = "available"
-        else:
-            computed = "available"
+        computed = _map_occupancy_status(
+            connector_status=connector,
+            availability="online",
+            reachable=True,
+        )
 
         return StationOccupancyResponse(
             station_id=station.id,
@@ -146,14 +216,16 @@ def _station_occupancy_snapshot(
             connector_status=str(connector),
             computed_status=computed,
             last_checked_at=observed_at,
+            source="live",
         )
     except Exception:
         return StationOccupancyResponse(
             station_id=station.id,
             host=station.host,
             connector_status=None,
-            computed_status="offline",
+            computed_status="unavailable",
             last_checked_at=now,
+            source="live",
         )
 
 
@@ -175,43 +247,73 @@ def _normalize_station_timestamp(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC)
 
 
-def _station_occupancy_snapshot_db(*, station: ChargingStation) -> StationOccupancyResponse:
-    settings = get_settings()
-    now = datetime.now(tz=UTC)
-    last_poll_at = _normalize_station_timestamp(getattr(station, "last_poll_at", None))
-    last_checked_at = last_poll_at if last_poll_at is not None else now
-    stale_after = max(1, int(settings.agent_stale_after_seconds))
-    is_stale = last_poll_at is None or (now - last_poll_at) > timedelta(seconds=stale_after)
-    if is_stale:
-        return StationOccupancyResponse(
-            station_id=station.id,
-            host=station.host,
-            connector_status=None,
-            computed_status="offline",
-            last_checked_at=last_checked_at,
-        )
-
+def _station_occupancy_snapshot_agent(*, station: ChargingStation) -> StationOccupancyResponse:
+    observed_at = _station_observed_at(station) or datetime.now(tz=UTC)
     raw_connector = getattr(station, "connector_status", None)
     connector = str(raw_connector) if raw_connector is not None else None
-    known = (station.status or "").strip().lower()
-    if known in {"charging", "occupied"}:
-        computed = "charging"
-    elif known == "available":
-        computed = "available"
-    else:
-        computed = "available"
-
+    computed = _map_occupancy_status(
+        connector_status=connector,
+        station_status=station.status,
+        reachable=True,
+    )
     return StationOccupancyResponse(
         station_id=station.id,
         host=station.host,
         connector_status=connector,
         computed_status=computed,
-        last_checked_at=last_checked_at,
+        last_checked_at=observed_at,
+        source="agent",
     )
+
+
+def _station_occupancy_snapshot_db(*, station: ChargingStation) -> StationOccupancyResponse:
+    settings = get_settings()
+    now = datetime.now(tz=UTC)
+    observed_at = _station_observed_at(station)
+    last_checked_at = observed_at if observed_at is not None else now
+    stale_after = max(1, int(settings.agent_stale_after_seconds))
+    is_stale = observed_at is None or (now - observed_at) > timedelta(seconds=stale_after)
+    if is_stale:
+        return StationOccupancyResponse(
+            station_id=station.id,
+            host=station.host,
+            connector_status=None,
+            computed_status="unavailable",
+            last_checked_at=last_checked_at,
+            source="db",
+        )
+    return _station_occupancy_snapshot_agent(station=station)
 
 
 def _stations_db_occupancy(*, stations: Sequence[ChargingStation]) -> list[StationOccupancyResponse]:
     return [_station_occupancy_snapshot_db(station=s) for s in stations]
+
+
+def _station_occupancy_snapshot_with_fallback(
+    *,
+    station: ChargingStation,
+    credentials: tuple[str, str] | None,
+    stale_after_seconds: int,
+) -> StationOccupancyResponse:
+    if _status_is_fresh(station=station, stale_after_seconds=stale_after_seconds):
+        return _station_occupancy_snapshot_agent(station=station)
+    return _station_occupancy_snapshot(station=station, credentials=credentials)
+
+
+def _stations_hybrid_occupancy(
+    *,
+    stations: Sequence[ChargingStation],
+    credentials: tuple[str, str] | None,
+    stale_after_seconds: int,
+) -> list[StationOccupancyResponse]:
+    return [
+        _station_occupancy_snapshot_with_fallback(
+            station=station,
+            credentials=credentials,
+            stale_after_seconds=stale_after_seconds,
+        )
+        for station in stations
+    ]
 
 
 @router.get(
@@ -226,6 +328,8 @@ def list_stations(
     limit: Annotated[int, Query(ge=1, le=200, description="Maximum number of stations to return")] = 50,
     offset: Annotated[int, Query(ge=0, description="Number of stations to skip")] = 0,
 ) -> StationListResponse:
+    settings = get_settings()
+    stale_after = max(1, int(getattr(settings, "agent_stale_after_seconds", 180) or 180))
     base = (
         select(ChargingStation)
         .where(ChargingStation.condominium_id == current_user.condominium_id)
@@ -257,6 +361,11 @@ def list_stations(
                 status=station.status,
                 status_source=station.status_source,
                 last_sync_at=station.last_sync_at,
+                last_seen_at=station.last_seen_at,
+                last_poll_at=station.last_poll_at,
+                connector_status=station.connector_status,
+                charging_state=station.charging_state,
+                status_is_fresh=_status_is_fresh(station=station, stale_after_seconds=stale_after),
                 active_session=False,
                 active_session_source="last_sync",
             )
@@ -267,7 +376,7 @@ def list_stations(
 @router.get(
     "/occupancy",
     response_model=StationOccupancyListResponse,
-    summary="Get live station occupancy (available/charging/offline)",
+    summary="Get live station occupancy (free/busy/unavailable)",
     description="Retrieves current connector status via the Legrand integration. Read-only and does not modify the database.",
 )
 def station_occupancy(
@@ -282,9 +391,16 @@ def station_occupancy(
     settings = get_settings()
     if settings.normalized_agent_occupancy_source == "db":
         items = _stations_db_occupancy(stations=stations)
-    else:
+    elif settings.normalized_agent_occupancy_source == "live_only":
         credentials = _resolve_legrand_credentials()
         items = _stations_live_occupancy(stations=stations, credentials=credentials)
+    else:
+        credentials = _resolve_legrand_credentials()
+        items = _stations_hybrid_occupancy(
+            stations=stations,
+            credentials=credentials,
+            stale_after_seconds=max(1, int(getattr(settings, "agent_stale_after_seconds", 180) or 180)),
+        )
     return StationOccupancyListResponse(items=items)
 
 
@@ -299,6 +415,8 @@ def get_station(
     current_user: NonResidentUser,
     station_id: int = Path(..., ge=1, description="Charging station database identifier"),
 ) -> StationResponse:
+    settings = get_settings()
+    stale_after = max(1, int(getattr(settings, "agent_stale_after_seconds", 180) or 180))
     station = db.get(ChargingStation, station_id)
     if station is None or station.condominium_id != current_user.condominium_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Station not found")
@@ -318,6 +436,11 @@ def get_station(
         status=station.status,
         status_source=station.status_source,
         last_sync_at=station.last_sync_at,
+        last_seen_at=station.last_seen_at,
+        last_poll_at=station.last_poll_at,
+        connector_status=station.connector_status,
+        charging_state=station.charging_state,
+        status_is_fresh=_status_is_fresh(station=station, stale_after_seconds=stale_after),
         active_session=False,
         active_session_source="last_sync",
     )

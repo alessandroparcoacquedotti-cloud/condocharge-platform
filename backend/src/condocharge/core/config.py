@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     @property
     def normalized_agent_occupancy_source(self) -> str:
         value = self.agent_occupancy_source.strip().lower()
-        return value if value in {"live", "db"} else "live"
+        return value if value in {"live", "db", "live_only"} else "live"
 
     @property
     def agent_allowed_condominium_id_set(self) -> set[int]:
