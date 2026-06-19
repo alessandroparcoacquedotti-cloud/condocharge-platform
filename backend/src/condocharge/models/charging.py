@@ -81,6 +81,39 @@ class ChargingStation(Base):
     )
 
 
+class AgentState(Base):
+    __tablename__ = "agent_states"
+    __table_args__ = (
+        UniqueConstraint("condominium_id", "agent_id", name="uq_agent_states_condo_agent"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    condominium_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("condominiums.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    agent_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    agent_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(UtcAwareDateTime(), nullable=True)
+    last_station_update_at: Mapped[datetime | None] = mapped_column(UtcAwareDateTime(), nullable=True)
+    last_session_import_at: Mapped[datetime | None] = mapped_column(UtcAwareDateTime(), nullable=True)
+    heartbeat_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    polling_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    import_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    failure_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class RfidUser(Base):
     __tablename__ = "rfid_users"
 
