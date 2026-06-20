@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { endpoints } from "../shared/api/endpoints";
 import type {
   AdminResidentRow,
+  AdminQueueSettingsResponse,
   AdminSettingsResponse,
   AdminTelegramSimulationResponse,
   AdminTelegramStatusResponse,
@@ -11,6 +12,7 @@ import type {
   TestEmailResponse,
 } from "../shared/api/types";
 import { useQuery } from "../shared/hooks/useQuery";
+import { AdminQueueSettingsCard } from "../shared/ui/AdminQueueSettingsCard";
 import { ErrorState, LoadingState, PageHead } from "../shared/ui";
 
 type AdminSettingsTelegramResponse = AdminSettingsResponse & {
@@ -34,6 +36,8 @@ export default function AdminSettingsPage() {
   const settingsQuery = useQuery<AdminSettingsTelegramResponse>(fetcher);
   const emailHealthFetcher = useMemo(() => () => endpoints.adminEmailHealth(), []);
   const emailHealthQuery = useQuery<EmailHealthResponse>(emailHealthFetcher);
+  const queueSettingsFetcher = useMemo(() => () => endpoints.adminQueueSettings(), []);
+  const queueSettingsQuery = useQuery<AdminQueueSettingsResponse>(queueSettingsFetcher);
   const telegramStatusFetcher = useMemo(() => () => endpoints.adminTelegramStatus(), []);
   const telegramStatusQuery = useQuery<AdminTelegramStatusResponse>(telegramStatusFetcher);
   const residentsFetcher = useMemo(() => () => endpoints.adminResidents(), []);
@@ -167,6 +171,9 @@ export default function AdminSettingsPage() {
       {testError ? <ErrorState title="Test email non riuscito" message={testError} /> : null}
       {telegramTestError ? <ErrorState title="Test Telegram non riuscito" message={telegramTestError} /> : null}
       {simulationError ? <ErrorState title="Simulazione Telegram non riuscita" message={simulationError} /> : null}
+      {queueSettingsQuery.error ? (
+        <ErrorState title="Impossibile caricare le impostazioni coda" message={queueSettingsQuery.error} onRetry={queueSettingsQuery.refetch} />
+      ) : null}
 
       <div className="grid">
         <div className="card" style={{ maxWidth: 480, gridColumn: "span 6" }}>
@@ -230,6 +237,7 @@ export default function AdminSettingsPage() {
             {message ? <div className="muted">{message}</div> : null}
           </form>
         </div>
+        <AdminQueueSettingsCard />
 
         <div className="card" style={{ gridColumn: "span 6" }}>
           <div className="card-title">Email</div>

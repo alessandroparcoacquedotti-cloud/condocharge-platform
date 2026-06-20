@@ -1,4 +1,4 @@
-﻿export type PaginationMeta = {
+export type PaginationMeta = {
   total: number;
   limit: number;
   offset: number;
@@ -237,6 +237,15 @@ export type ResidentSummaryResponse = {
   monthly_breakdown: MonthlyConsumptionPoint[];
 };
 
+export type ResidentQueueStatusResponse = {
+  queue_enabled: boolean;
+  in_queue: boolean;
+  position: number | null;
+  joined_at: string | null;
+  active_entry_id: number | null;
+  status: string | null;
+};
+
 export type MonthlyConsumptionPoint = {
   month: string;
   total_energy_wh: number;
@@ -271,6 +280,7 @@ export type ResidentStationStatusListResponse = {
 export type ResidentNotificationPreferences = {
   charging_completed: boolean;
   station_available: boolean;
+  station_busy: boolean;
   station_back_online: boolean;
   agent_offline: boolean;
   agent_recovered: boolean;
@@ -372,9 +382,17 @@ export type AdminRfidUserRow = {
 export type AdminSettingsResponse = {
   energy_price_eur_per_kwh: number;
   telegram_station_available_enabled: boolean;
+  telegram_station_busy_enabled: boolean;
+  telegram_station_back_online_enabled: boolean;
   telegram_charging_completed_enabled: boolean;
   telegram_agent_offline_enabled: boolean;
   telegram_agent_recovered_enabled: boolean;
+};
+
+export type AdminQueueSettingsResponse = {
+  queue_enabled: boolean;
+  waiting_count: number;
+  updated_at: string | null;
 };
 
 export type BillingStatementResponse = {
@@ -680,6 +698,23 @@ export type AdminTelegramTestSendResponse = {
   provider_message_id: string | null;
 };
 
+export type AdminTelegramSimulationRequest = {
+  resident_app_user_id: number;
+  notification_type: string;
+};
+
+export type AdminTelegramSimulationResponse = {
+  resident_app_user_id: number;
+  resident_username: string;
+  notification_type: string;
+  delivery_status: string;
+  telegram_enabled: boolean;
+  provider_message_id: string | null;
+  audit_id: number | null;
+  audit_status: string | null;
+  message_preview: string;
+};
+
 export type CostByResidentRow = {
   app_user_id: number | null;
   resident: string;
@@ -702,21 +737,3 @@ export type AdminCostReportResponse = {
   total_estimated_cost_eur: number;
   by_resident: CostByResidentRow[];
 };
-export type AdminTelegramSimulationRequest = {
-  resident_app_user_id: number;
-  notification_type: string;
-};
-
-export type AdminTelegramSimulationResponse = {
-  resident_app_user_id: number;
-  resident_username: string;
-  notification_type: string;
-  delivery_status: string;
-  telegram_enabled: boolean;
-  provider_message_id: string | null;
-  audit_id: number | null;
-  audit_status: string | null;
-  message_preview: string;
-};
-
-

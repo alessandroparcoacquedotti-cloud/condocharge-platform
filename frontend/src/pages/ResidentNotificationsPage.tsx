@@ -12,6 +12,7 @@ export default function ResidentNotificationsPage() {
   const [values, setValues] = useState<ResidentNotificationPreferencesUpdate>({
     charging_completed: true,
     station_available: true,
+    station_busy: false,
     station_back_online: false,
     agent_offline: true,
     agent_recovered: true,
@@ -25,6 +26,7 @@ export default function ResidentNotificationsPage() {
     setValues({
       charging_completed: query.data.charging_completed,
       station_available: query.data.station_available,
+      station_busy: query.data.station_busy,
       station_back_online: query.data.station_back_online,
       agent_offline: query.data.agent_offline,
       agent_recovered: query.data.agent_recovered,
@@ -81,6 +83,18 @@ export default function ResidentNotificationsPage() {
             </label>
             <div className="muted" style={{ marginTop: -6, fontSize: 12 }}>
               “La colonnina è libera.”
+            </div>
+
+            <label className="row" style={{ justifyContent: "flex-start" }}>
+              <input
+                type="checkbox"
+                checked={values.station_busy}
+                onChange={(e) => setValues((v) => ({ ...v, station_busy: e.target.checked }))}
+              />
+              <span>Colonnina occupata</span>
+            </label>
+            <div className="muted" style={{ marginTop: -6, fontSize: 12 }}>
+              “La colonnina è occupata.”
             </div>
 
             <label className="row" style={{ justifyContent: "flex-start" }}>

@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { endpoints } from "../shared/api/endpoints";
 import type { ResidentSummaryResponse } from "../shared/api/types";
 import { useQuery } from "../shared/hooks/useQuery";
+import { ResidentQueueCard } from "../shared/ui/ResidentQueueCard";
 import {
   DateRange,
   DateRangeControls,
@@ -142,6 +143,7 @@ export default function ResidentDashboardPage() {
               <div className="muted">Nessun dato mensile disponibile per il periodo selezionato.</div>
             )}
           </div>
+          <ResidentQueueCard />
         </div>
       ) : null}
     </div>

@@ -1,9 +1,10 @@
-﻿import { createApiClient } from "./client";
+import { createApiClient } from "./client";
 import type {
   AgentStatusResponse,
   AppUserResponse,
   AdminCostReportResponse,
   AdminResidentRow,
+  AdminQueueSettingsResponse,
   AdminRfidUserRow,
   AdminSettingsResponse,
   CreateResidentRequest,
@@ -18,6 +19,7 @@ import type {
   BillingPeriodResponse,
   AdminNotificationLogListResponse,
   EmailHealthResponse,
+  AdminTelegramSimulationResponse,
   AdminTelegramStatusResponse,
   AdminTelegramTestSendResponse,
   PaymentImportResultResponse,
@@ -33,6 +35,7 @@ import type {
   ReconciliationResponse,
   ReminderPayloadResponse,
   ResidentProfileResponse,
+  ResidentQueueStatusResponse,
   ResidentSessionListResponse,
   TelegramLinkIssueResponse,
   TelegramLinkStatus,
@@ -166,9 +169,17 @@ export const endpoints = {
   adminSettings() {
     return api.getJson<AdminSettingsResponse>("/api/v1/admin/settings");
   },
+  adminQueueSettings() {
+    return api.getJson<AdminQueueSettingsResponse>("/api/v1/admin/queue/settings");
+  },
+  updateAdminQueueSettings(params: { queue_enabled: boolean }) {
+    return api.patchJson<AdminQueueSettingsResponse>("/api/v1/admin/queue/settings", params);
+  },
   updateAdminSettings(params: {
     energy_price_eur_per_kwh: number;
     telegram_station_available_enabled: boolean;
+    telegram_station_busy_enabled: boolean;
+    telegram_station_back_online_enabled: boolean;
     telegram_charging_completed_enabled: boolean;
     telegram_agent_offline_enabled: boolean;
     telegram_agent_recovered_enabled: boolean;
@@ -180,6 +191,9 @@ export const endpoints = {
   },
   testAdminTelegram(params: { chat_id: string }) {
     return api.postJson<AdminTelegramTestSendResponse>("/api/v1/admin/telegram/test-send", params);
+  },
+  simulateAdminTelegram(params: { resident_app_user_id: number; notification_type: string }) {
+    return api.postJson<AdminTelegramSimulationResponse>("/api/v1/admin/telegram/simulate", params);
   },
   adminNotificationLogs(params: AdminNotificationLogsParams = {}) {
     const search = new URLSearchParams();
@@ -340,6 +354,15 @@ export const endpoints = {
   residentStationsStatus() {
     return api.getJson<ResidentStationStatusListResponse>("/api/v1/resident/stations");
   },
+  residentQueueStatus() {
+    return api.getJson<ResidentQueueStatusResponse>("/api/v1/resident/queue");
+  },
+  joinResidentQueue() {
+    return api.postJson<ResidentQueueStatusResponse>("/api/v1/resident/queue", {});
+  },
+  leaveResidentQueue() {
+    return api.deleteJson<ResidentQueueStatusResponse>("/api/v1/resident/queue");
+  },
   residentStationsOccupancy() {
     return api.getJson<ResidentStationOccupancyListResponse>("/api/v1/resident/stations/occupancy");
   },
@@ -389,10 +412,3 @@ export const endpoints = {
     return await api.get(`/api/v1/admin/reports/costs/export.csv${qs ? `?${qs}` : ""}`);
   },
 };
-
-(endpoints as typeof endpoints & {
-  simulateAdminTelegram: (params: { resident_app_user_id: number; notification_type: string }) => Promise<import('./types').AdminTelegramSimulationResponse>;
-}).simulateAdminTelegram = function simulateAdminTelegram(params) {
-  return api.postJson<import('./types').AdminTelegramSimulationResponse>("/api/v1/admin/telegram/simulate", params);
-};
-

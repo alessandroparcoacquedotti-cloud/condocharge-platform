@@ -10,18 +10,22 @@ from condocharge.models.billing import (
     ResidentBillingStatement,
     ResidentBillingStatementSession,
 )
-from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
+from condocharge.models.charging import AgentState, ChargingSession, ChargingStation, RfidUser
+from condocharge.models.queue import ChargingQueueEntry, ChargingQueueSettings
 from condocharge.models.tenancy import (
     AppUser,
     AppUserRole,
     Condominium,
     ResidentEmailNotification,
     ResidentInvitationToken,
+    ResidentNotificationHistory,
+    ResidentTelegramLinkToken,
 )
 
 __all__ = [
     "AppUser",
     "AppUserRole",
+    "AgentState",
     "BillingEmailNotification",
     "BillingPayment",
     "BillingPaymentImportJob",
@@ -31,6 +35,8 @@ __all__ = [
     "BillingReminderRule",
     "BillingUnmatchedPayment",
     "ChargingSession",
+    "ChargingQueueEntry",
+    "ChargingQueueSettings",
     "ChargingStation",
     "Condominium",
     "ResidentBillingStatement",
@@ -38,4 +44,6 @@ __all__ = [
     "RfidUser",
     "ResidentEmailNotification",
     "ResidentInvitationToken",
+    "ResidentNotificationHistory",
+    "ResidentTelegramLinkToken",
 ]

@@ -3,10 +3,12 @@ import { render, screen, waitFor } from "@testing-library/react";
 import AdminSettingsPage from "./AdminSettingsPage";
 
 const mocks = vi.hoisted(() => ({
+  adminQueueSettings: vi.fn(),
   adminSettings: vi.fn(),
   adminResidents: vi.fn(),
   adminEmailHealth: vi.fn(),
   adminTelegramStatus: vi.fn(),
+  updateAdminQueueSettings: vi.fn(),
   updateAdminSettings: vi.fn(),
   testAdminEmail: vi.fn(),
   testAdminTelegram: vi.fn(),
@@ -15,10 +17,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../shared/api/endpoints", () => ({
   endpoints: {
+    adminQueueSettings: mocks.adminQueueSettings,
     adminSettings: mocks.adminSettings,
     adminResidents: mocks.adminResidents,
     adminEmailHealth: mocks.adminEmailHealth,
     adminTelegramStatus: mocks.adminTelegramStatus,
+    updateAdminQueueSettings: mocks.updateAdminQueueSettings,
     updateAdminSettings: mocks.updateAdminSettings,
     testAdminEmail: mocks.testAdminEmail,
     testAdminTelegram: mocks.testAdminTelegram,
@@ -36,6 +40,11 @@ describe("AdminSettingsPage", () => {
       telegram_charging_completed_enabled: true,
       telegram_agent_offline_enabled: true,
       telegram_agent_recovered_enabled: true,
+    });
+    mocks.adminQueueSettings.mockResolvedValue({
+      queue_enabled: false,
+      waiting_count: 0,
+      updated_at: "2026-06-20T08:00:00Z",
     });
     mocks.adminResidents.mockResolvedValue([
       {
@@ -82,6 +91,11 @@ describe("AdminSettingsPage", () => {
       telegram_agent_offline_enabled: true,
       telegram_agent_recovered_enabled: true,
     });
+    mocks.updateAdminQueueSettings.mockResolvedValue({
+      queue_enabled: true,
+      waiting_count: 0,
+      updated_at: "2026-06-20T08:05:00Z",
+    });
     mocks.testAdminEmail.mockResolvedValue({});
     mocks.testAdminTelegram.mockResolvedValue({
       chat_id: "123",
@@ -103,10 +117,11 @@ describe("AdminSettingsPage", () => {
     });
   });
 
-  it("renders Telegram bot status, notification toggles, and simulator", async () => {
+  it("renders queue settings, Telegram bot status, notification toggles, and simulator", async () => {
     render(<AdminSettingsPage />);
 
     await waitFor(() => expect(mocks.adminSettings).toHaveBeenCalled());
+    expect(screen.getByText("Abilita coda condominiale")).toBeInTheDocument();
     expect(screen.getByText("Telegram")).toBeInTheDocument();
     expect(screen.getByText("Telegram: colonnina disponibile")).toBeInTheDocument();
     expect(screen.getByText("Telegram: colonnina occupata")).toBeInTheDocument();

@@ -16,6 +16,7 @@ from condocharge.api.v1.stations import (
     _stations_live_occupancy,
 )
 from condocharge.app.services.resident_telegram_link_service import ResidentTelegramLinkService, TelegramLinkError
+from condocharge.app.services.queue_service import QueueDisabledError, QueueService
 from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramDeliveryError
 from condocharge.app.services.telegram_notification_service import ResidentTelegramNotificationService
 from condocharge.core.config import get_settings
@@ -25,14 +26,36 @@ from condocharge.models.tenancy import AppUser, AppUserRole
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 _KNOWN_COMMANDS = {"/start", "/help", "/status", "/test", "/history"}
+_BUTTON_JOIN_QUEUE = "Join Queue"
+_BUTTON_LEAVE_QUEUE = "Leave Queue"
+_BUTTON_VIEW_POSITION = "View Position"
+_BUTTON_REGULATIONS = "Regulations"
+_BUTTON_ACTIONS = {
+    _BUTTON_JOIN_QUEUE: "join_queue",
+    _BUTTON_LEAVE_QUEUE: "leave_queue",
+    _BUTTON_VIEW_POSITION: "view_position",
+    _BUTTON_REGULATIONS: "regulations",
+}
 _ROME_TZ = ZoneInfo("Europe/Rome")
 
 
-def _send_message_best_effort(*, bot_service: TelegramBotService, chat_id: str, text: str) -> None:
+def _send_message_best_effort(
+    *,
+    bot_service: TelegramBotService,
+    chat_id: str,
+    text: str,
+    reply_markup: dict[str, Any] | None = None,
+) -> None:
     if not bot_service.enabled:
         return
     try:
-        bot_service.send_message(chat_id=chat_id, text=text)
+        if reply_markup is None:
+            bot_service.send_message(chat_id=chat_id, text=text)
+        else:
+            try:
+                bot_service.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+            except TypeError:
+                bot_service.send_message(chat_id=chat_id, text=text)
     except TelegramDeliveryError:
         return
 
@@ -79,6 +102,29 @@ def _help_message(*, condominium_name: str) -> str:
         "/history - ultime 10 sessioni di ricarica\n"
         "/test - invia una notifica Telegram di test e registra un audit\n"
         "/start - conferma il collegamento o mostra le istruzioni iniziali"
+    )
+
+
+def _queue_keyboard() -> dict[str, Any]:
+    return {
+        "keyboard": [
+            [{"text": _BUTTON_JOIN_QUEUE}, {"text": _BUTTON_LEAVE_QUEUE}],
+            [{"text": _BUTTON_VIEW_POSITION}, {"text": _BUTTON_REGULATIONS}],
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False,
+    }
+
+
+def _queue_regulations_message(*, condominium_name: str) -> str:
+    return (
+        "Queue regulations\n\n"
+        f"Condominium: {condominium_name}\n\n"
+        "- FIFO waiting list\n"
+        "- Only your personal queue position is shown\n"
+        "- Resident names and queue roster are never shared\n"
+        "- Queue offers and reservation timing are not active in v1.2.0 yet\n"
+        "- Queue access depends on the administrator enabling the queue"
     )
 
 
@@ -180,6 +226,32 @@ def _status_message_for_resident(*, db: DbSession, resident: AppUser) -> str:
             ),
         ]
     )
+    queue_status = QueueService(db=db).get_resident_status(resident=resident)
+    lines.extend(
+        [
+            "",
+            "Queue",
+            f"Enabled: {'Yes' if queue_status.queue_enabled else 'No'}",
+            f"In queue: {'Yes' if queue_status.in_queue else 'No'}",
+        ]
+    )
+    if queue_status.in_queue and queue_status.position is not None:
+        lines.append(f"Your position: {queue_status.position}")
+    return "\n".join(lines)
+
+
+def _queue_status_message(*, db: DbSession, resident: AppUser) -> str:
+    status_row = QueueService(db=db).get_resident_status(resident=resident)
+    lines = [
+        "Queue status",
+        "",
+        f"Queue enabled: {'Yes' if status_row.queue_enabled else 'No'}",
+        f"In queue: {'Yes' if status_row.in_queue else 'No'}",
+    ]
+    if status_row.in_queue and status_row.position is not None:
+        lines.append(f"Your position: {status_row.position}")
+    if status_row.joined_at is not None:
+        lines.append(f"Joined at: {_format_local_dt(status_row.joined_at)}")
     return "\n".join(lines)
 
 
@@ -225,11 +297,17 @@ def telegram_webhook(
     chat = message.get("chat") or {}
     from_user = message.get("from") or {}
     chat_id = str(chat.get("id") or "").strip()
-    if not text.startswith("/") or not chat_id:
+    if not text or not chat_id:
         return {"ok": True}
 
-    command, argument = _normalize_command(text, bot_username=settings.telegram_bot_username)
-    if command not in _KNOWN_COMMANDS:
+    action = _BUTTON_ACTIONS.get(text)
+    command = ""
+    argument = None
+    if action is None:
+        if not text.startswith("/"):
+            return {"ok": True}
+        command, argument = _normalize_command(text, bot_username=settings.telegram_bot_username)
+    if action is None and command not in _KNOWN_COMMANDS:
         return {"ok": True}
 
     bot_service = TelegramBotService(settings=settings)
@@ -279,11 +357,59 @@ def telegram_webhook(
         )
         return {"ok": True}
 
+    if action == "join_queue":
+        service = QueueService(db=db)
+        try:
+            service.join_queue(resident=resident)
+            text_out = _queue_status_message(db=db, resident=resident)
+        except QueueDisabledError:
+            text_out = "Queue is currently disabled by the administrator."
+        _send_message_best_effort(
+            bot_service=bot_service,
+            chat_id=chat_id,
+            text=text_out,
+            reply_markup=_queue_keyboard(),
+        )
+        return {"ok": True}
+
+    if action == "leave_queue":
+        service = QueueService(db=db)
+        text_out = _queue_status_message(db=db, resident=resident)
+        if service.get_resident_status(resident=resident).in_queue:
+            service.leave_queue(resident=resident)
+            text_out = _queue_status_message(db=db, resident=resident)
+        _send_message_best_effort(
+            bot_service=bot_service,
+            chat_id=chat_id,
+            text=text_out,
+            reply_markup=_queue_keyboard(),
+        )
+        return {"ok": True}
+
+    if action == "view_position":
+        _send_message_best_effort(
+            bot_service=bot_service,
+            chat_id=chat_id,
+            text=_queue_status_message(db=db, resident=resident),
+            reply_markup=_queue_keyboard(),
+        )
+        return {"ok": True}
+
+    if action == "regulations":
+        _send_message_best_effort(
+            bot_service=bot_service,
+            chat_id=chat_id,
+            text=_queue_regulations_message(condominium_name=resident.condominium.name),
+            reply_markup=_queue_keyboard(),
+        )
+        return {"ok": True}
+
     if command == "/status":
         _send_message_best_effort(
             bot_service=bot_service,
             chat_id=chat_id,
             text=_status_message_for_resident(db=db, resident=resident),
+            reply_markup=_queue_keyboard(),
         )
         return {"ok": True}
 

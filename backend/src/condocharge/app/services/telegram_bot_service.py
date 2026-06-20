@@ -71,16 +71,26 @@ class TelegramBotService:
             return None
         return f"https://t.me/{username}?start={token}"
 
-    def send_message(self, *, chat_id: str, text: str) -> TelegramSendResult:
+    def send_message(
+        self,
+        *,
+        chat_id: str,
+        text: str,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> TelegramSendResult:
         if not self.enabled:
             raise TelegramDeliveryError("Telegram bot token not configured.")
 
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": text,
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+
         payload = self._api_caller(
             "sendMessage",
-            {
-                "chat_id": chat_id,
-                "text": text,
-            },
+            payload,
         )
         result = payload.get("result") or {}
         message_id = result.get("message_id")
