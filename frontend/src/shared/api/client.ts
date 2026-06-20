@@ -192,6 +192,41 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }
       return res;
     },
+    async delete(path: string, init: RequestInit = {}) {
+      const token = getStoredToken();
+      const wrapped = withTimeout(init);
+      let res: Response;
+      try {
+        res = await fetch(joinUrl(baseUrl, path), {
+          ...wrapped.init,
+          method: "DELETE",
+          cache: "no-store",
+          headers: {
+            Accept: "application/json",
+            "Cache-Control": "no-store",
+            ...(init.headers ?? {}),
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+      } finally {
+        wrapped.cleanup();
+      }
+      if (!res.ok) {
+        let details: unknown = undefined;
+        try {
+          details = await res.json();
+        } catch {
+          details = await res.text().catch(() => undefined);
+        }
+        const error: ApiError = {
+          status: res.status,
+          message: `Request failed: ${res.status} ${res.statusText}`,
+          details,
+        };
+        throw error;
+      }
+      return res;
+    },
     async getJson<T>(path: string, init: RequestInit = {}) {
       const res = await this.get(path, init);
       return (await res.json()) as T;
@@ -227,6 +262,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
         },
         body: JSON.stringify(body),
       });
+      return (await res.json()) as T;
+    },
+    async deleteJson<T>(path: string, init: RequestInit = {}) {
+      const res = await this.delete(path, init);
       return (await res.json()) as T;
     },
   };

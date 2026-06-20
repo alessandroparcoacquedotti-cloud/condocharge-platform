@@ -13,6 +13,8 @@ export default function ResidentNotificationsPage() {
     charging_completed: true,
     station_available: true,
     station_back_online: false,
+    agent_offline: true,
+    agent_recovered: true,
   });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -24,6 +26,8 @@ export default function ResidentNotificationsPage() {
       charging_completed: query.data.charging_completed,
       station_available: query.data.station_available,
       station_back_online: query.data.station_back_online,
+      agent_offline: query.data.agent_offline,
+      agent_recovered: query.data.agent_recovered,
     });
   }, [query.data]);
 
@@ -91,6 +95,30 @@ export default function ResidentNotificationsPage() {
               “Una colonnina è tornata online.”
             </div>
 
+            <label className="row" style={{ justifyContent: "flex-start" }}>
+              <input
+                type="checkbox"
+                checked={values.agent_offline}
+                onChange={(e) => setValues((v) => ({ ...v, agent_offline: e.target.checked }))}
+              />
+              <span>Agente offline</span>
+            </label>
+            <div className="muted" style={{ marginTop: -6, fontSize: 12 }}>
+              “Il mini-PC agente non risponde.”
+            </div>
+
+            <label className="row" style={{ justifyContent: "flex-start" }}>
+              <input
+                type="checkbox"
+                checked={values.agent_recovered}
+                onChange={(e) => setValues((v) => ({ ...v, agent_recovered: e.target.checked }))}
+              />
+              <span>Agente ripristinato</span>
+            </label>
+            <div className="muted" style={{ marginTop: -6, fontSize: 12 }}>
+              “Il mini-PC agente e tornato operativo.”
+            </div>
+
             <button className="btn" type="submit" disabled={saving}>
               {saving ? "Salvataggio…" : "Salva"}
             </button>
@@ -108,4 +136,3 @@ export default function ResidentNotificationsPage() {
     </div>
   );
 }
-
