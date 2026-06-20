@@ -1,21 +1,51 @@
-﻿import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { endpoints } from "../shared/api/endpoints";
-import type { ResidentNotificationPreferencesUpdate, ResidentProfileResponse, TelegramLinkIssueResponse } from "../shared/api/types";
+import type { TelegramLinkIssueResponse } from "../shared/api/types";
 import { useQuery } from "../shared/hooks/useQuery";
 import { ErrorState, LoadingState, PageHead } from "../shared/ui";
 
-export default function ResidentProfilePage() {
+type ResidentNotificationPreferencesTelegramUpdate = {
+  charging_completed: boolean;
+  station_available: boolean;
+  station_busy: boolean;
+  station_back_online: boolean;
+  agent_offline: boolean;
+  agent_recovered: boolean;
+};
+
+type ResidentProfileTelegramResponse = {
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+  apartment_or_unit: string | null;
+  email: string | null;
+  phone_number: string | null;
+  linked_cards: Array<{ id: number; rfid_id: string; name: string | null }>;
+  notification_preferences: ResidentNotificationPreferencesTelegramUpdate;
+  telegram: {
+    linked: boolean;
+    chat_id: string | null;
+    telegram_username: string | null;
+    linked_at: string | null;
+  };
+};
+
+export default function ResidentProfilePageTelegramV11() {
   const navigate = useNavigate();
-  const fetcher = useMemo(() => () => endpoints.residentProfile(), []);
-  const query = useQuery<ResidentProfileResponse>(fetcher);
+  const fetcher = useMemo(
+    () => async () => (await endpoints.residentProfile()) as ResidentProfileTelegramResponse,
+    [],
+  );
+  const query = useQuery<ResidentProfileTelegramResponse>(fetcher);
 
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [prefs, setPrefs] = useState<ResidentNotificationPreferencesUpdate>({
+  const [prefs, setPrefs] = useState<ResidentNotificationPreferencesTelegramUpdate>({
     charging_completed: true,
     station_available: true,
+    station_busy: false,
     station_back_online: false,
     agent_offline: true,
     agent_recovered: true,
@@ -36,6 +66,7 @@ export default function ResidentProfilePage() {
     setPrefs({
       charging_completed: query.data.notification_preferences.charging_completed,
       station_available: query.data.notification_preferences.station_available,
+      station_busy: query.data.notification_preferences.station_busy,
       station_back_online: query.data.notification_preferences.station_back_online,
       agent_offline: query.data.notification_preferences.agent_offline,
       agent_recovered: query.data.notification_preferences.agent_recovered,
@@ -111,9 +142,17 @@ export default function ResidentProfilePage() {
 
   return (
     <div>
-      <PageHead title="Profilo" subtitle="Dati personali, contatti e preferenze notifiche" right={<button className="btn" type="button" onClick={() => navigate("/resident/cambia-password")}>Cambia password</button>} />
+      <PageHead
+        title="Profilo"
+        subtitle="Dati personali, contatti e preferenze notifiche"
+        right={
+          <button className="btn" type="button" onClick={() => navigate("/resident/cambia-password")}>
+            Cambia password
+          </button>
+        }
+      />
 
-      {query.loading ? <LoadingState label="Caricamento profiloâ€¦" /> : null}
+      {query.loading ? <LoadingState label="Caricamento profilo..." /> : null}
       {query.error ? <ErrorState title="Impossibile caricare il profilo" message={query.error} onRetry={query.refetch} /> : null}
       {error ? <ErrorState title="Operazione non riuscita" message={error} /> : null}
       {message ? <div className="muted">{message}</div> : null}
@@ -127,7 +166,7 @@ export default function ResidentProfilePage() {
                 Nome: <span className="muted">{[query.data.first_name, query.data.last_name].filter(Boolean).join(" ") || "-"}</span>
               </span>
               <span className="pill">
-                UnitÃ : <span className="muted">{query.data.apartment_or_unit ?? "-"}</span>
+                Unita: <span className="muted">{query.data.apartment_or_unit ?? "-"}</span>
               </span>
               <span className="pill">
                 Username: <span className="muted">{query.data.username}</span>
@@ -147,7 +186,7 @@ export default function ResidentProfilePage() {
                 <input className="auth-input" value={phone} onChange={(e) => setPhone(e.target.value)} />
               </label>
               <button className="btn" type="submit" disabled={savingProfile}>
-                {savingProfile ? "Salvataggioâ€¦" : "Salva"}
+                {savingProfile ? "Salvataggio..." : "Salva"}
               </button>
             </form>
           </div>
@@ -190,6 +229,14 @@ export default function ResidentProfilePage() {
               <label className="row" style={{ justifyContent: "flex-start" }}>
                 <input
                   type="checkbox"
+                  checked={prefs.station_busy}
+                  onChange={(e) => setPrefs((v) => ({ ...v, station_busy: e.target.checked }))}
+                />
+                <span>Colonnina occupata</span>
+              </label>
+              <label className="row" style={{ justifyContent: "flex-start" }}>
+                <input
+                  type="checkbox"
                   checked={prefs.station_back_online}
                   onChange={(e) => setPrefs((v) => ({ ...v, station_back_online: e.target.checked }))}
                 />
@@ -212,7 +259,7 @@ export default function ResidentProfilePage() {
                 <span>Agente ripristinato</span>
               </label>
               <button className="btn" type="submit" disabled={savingPrefs}>
-                {savingPrefs ? "Salvataggioâ€¦" : "Salva"}
+                {savingPrefs ? "Salvataggio..." : "Salva"}
               </button>
             </form>
           </div>
@@ -220,7 +267,9 @@ export default function ResidentProfilePage() {
           <div className="card" style={{ gridColumn: "span 6" }}>
             <div className="card-title">Telegram</div>
             <div style={{ display: "grid", gap: 8 }}>
-              <div><strong>Stato:</strong> {query.data.telegram.linked ? "Collegato" : "Non collegato"}</div>
+              <div>
+                <strong>Stato:</strong> {query.data.telegram.linked ? "Collegato" : "Non collegato"}
+              </div>
               <div className="muted">Chat ID: {query.data.telegram.chat_id ?? "-"}</div>
               <div className="muted">Username Telegram: {query.data.telegram.telegram_username ?? "-"}</div>
               <div className="muted">Collegato il: {query.data.telegram.linked_at ?? "-"}</div>
@@ -230,13 +279,14 @@ export default function ResidentProfilePage() {
                 </a>
               ) : null}
               {telegramIssue ? <div className="muted">Link valido fino a: {telegramIssue.expires_at}</div> : null}
+              <div className="muted">Comandi disponibili dopo il collegamento: /help, /status, /test</div>
             </div>
             <div className="row" style={{ justifyContent: "flex-start", marginTop: 12 }}>
               <button className="btn" type="button" onClick={issueTelegramLink} disabled={linkingTelegram}>
-                {linkingTelegram ? "Generazioneâ€¦" : "Genera link Telegram"}
+                {linkingTelegram ? "Generazione..." : "Genera link Telegram"}
               </button>
               <button className="btn btn-secondary" type="button" onClick={unlinkTelegram} disabled={unlinkingTelegram || !query.data.telegram.linked}>
-                {unlinkingTelegram ? "Scollegamentoâ€¦" : "Scollega Telegram"}
+                {unlinkingTelegram ? "Scollegamento..." : "Scollega Telegram"}
               </button>
             </div>
           </div>

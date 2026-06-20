@@ -1,4 +1,4 @@
-import { createApiClient } from "./client";
+﻿import { createApiClient } from "./client";
 import type {
   AgentStatusResponse,
   AppUserResponse,
@@ -389,3 +389,10 @@ export const endpoints = {
     return await api.get(`/api/v1/admin/reports/costs/export.csv${qs ? `?${qs}` : ""}`);
   },
 };
+
+(endpoints as typeof endpoints & {
+  simulateAdminTelegram: (params: { resident_app_user_id: number; notification_type: string }) => Promise<import('./types').AdminTelegramSimulationResponse>;
+}).simulateAdminTelegram = function simulateAdminTelegram(params) {
+  return api.postJson<import('./types').AdminTelegramSimulationResponse>("/api/v1/admin/telegram/simulate", params);
+};
+

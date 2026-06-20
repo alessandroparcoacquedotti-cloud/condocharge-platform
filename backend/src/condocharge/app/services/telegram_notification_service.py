@@ -14,7 +14,7 @@ from condocharge.app.services.resident_notification_service import (
 )
 from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramDeliveryError
 from condocharge.core.config import Settings
-from condocharge.models.charging import AgentState, ChargingSession, ChargingStation
+from condocharge.models.charging import AgentState, ChargingSession, ChargingStation, RfidUser
 from condocharge.models.tenancy import (
     AppUser,
     AppUserRole,
@@ -29,9 +29,17 @@ STATUS_PREVIEW = "preview"
 STATUS_FAILED = "failed"
 
 NOTIFICATION_TYPE_STATION_AVAILABLE = "station_available"
+NOTIFICATION_TYPE_STATION_BUSY = "station_busy"
+NOTIFICATION_TYPE_STATION_BACK_ONLINE = "station_back_online"
 NOTIFICATION_TYPE_CHARGING_COMPLETED = "charging_completed"
 NOTIFICATION_TYPE_AGENT_OFFLINE = "agent_offline"
 NOTIFICATION_TYPE_AGENT_RECOVERED = "agent_recovered"
+NOTIFICATION_TYPE_COMMAND_TEST = "command_test"
+
+_AVAILABLE_STATES = {"available", "free"}
+_BUSY_STATES = {"busy", "charging", "occupied"}
+_UNAVAILABLE_STATES = {"unavailable", "offline", "faulted", "unknown", "unreachable", "degraded"}
+_ONLINE_TRANSITION_STATES = {"checking", *sorted(_UNAVAILABLE_STATES)}
 
 
 class ResidentTelegramNotificationService:
@@ -94,6 +102,72 @@ class ResidentTelegramNotificationService:
             ),
         )
 
+    def send_station_busy(
+        self,
+        *,
+        condominium_id: int,
+        resident: AppUser,
+        station: ChargingStation,
+        observed_at: datetime,
+        transition_key: str | None = None,
+    ) -> ResidentNotificationHistory | None:
+        if not self._notifications_enabled(
+            condominium_id=condominium_id,
+            resident=resident,
+            notification_type=NOTIFICATION_TYPE_STATION_BUSY,
+        ):
+            return None
+
+        transition_key = transition_key or self._station_transition_key(
+            station_id=station.id,
+            transition_name="busy",
+            observed_at=observed_at,
+        )
+        return self._deliver(
+            condominium_id=condominium_id,
+            resident=resident,
+            notification_type=NOTIFICATION_TYPE_STATION_BUSY,
+            dedupe_key=f"{transition_key}:resident:{resident.id}",
+            text=self._build_station_busy_text(
+                condominium_id=condominium_id,
+                station=station,
+                observed_at=observed_at,
+            ),
+        )
+
+    def send_station_back_online(
+        self,
+        *,
+        condominium_id: int,
+        resident: AppUser,
+        station: ChargingStation,
+        observed_at: datetime,
+        transition_key: str | None = None,
+    ) -> ResidentNotificationHistory | None:
+        if not self._notifications_enabled(
+            condominium_id=condominium_id,
+            resident=resident,
+            notification_type=NOTIFICATION_TYPE_STATION_BACK_ONLINE,
+        ):
+            return None
+
+        transition_key = transition_key or self._station_transition_key(
+            station_id=station.id,
+            transition_name="back-online",
+            observed_at=observed_at,
+        )
+        return self._deliver(
+            condominium_id=condominium_id,
+            resident=resident,
+            notification_type=NOTIFICATION_TYPE_STATION_BACK_ONLINE,
+            dedupe_key=f"{transition_key}:resident:{resident.id}",
+            text=self._build_station_back_online_text(
+                condominium_id=condominium_id,
+                station=station,
+                observed_at=observed_at,
+            ),
+        )
+
     def send_charging_completed(
         self,
         *,
@@ -123,6 +197,61 @@ class ResidentTelegramNotificationService:
                 f"Energy: {int(session.energy_wh)} Wh\n"
                 f"Duration: {int(session.total_minutes)} minutes"
             ),
+        )
+
+    def send_command_test(
+        self,
+        *,
+        condominium_id: int,
+        resident: AppUser,
+        requested_at: datetime | None = None,
+    ) -> ResidentNotificationHistory | None:
+        now = self._as_utc(requested_at)
+        return self._deliver(
+            condominium_id=condominium_id,
+            resident=resident,
+            notification_type=NOTIFICATION_TYPE_COMMAND_TEST,
+            dedupe_key=f"command-test:{resident.id}:{now.isoformat()}",
+            text=(
+                "CondoCharge test notification\n"
+                f"Condominium: {self._condominium_name(condominium_id)}\n"
+                f"Resident: {resident.username}\n"
+                f"Requested at: {now.isoformat()}"
+            ),
+        )
+
+    def send_admin_simulation(
+        self,
+        *,
+        condominium_id: int,
+        resident: AppUser,
+        notification_type: str,
+        station: ChargingStation | None = None,
+        session: ChargingSession | None = None,
+        agent_state: AgentState | None = None,
+        observed_at: datetime | None = None,
+    ) -> ResidentNotificationHistory | None:
+        now = self._as_utc(observed_at)
+        target_station = station or self._default_station(condominium_id=condominium_id)
+        target_agent = agent_state or self._default_agent_state(condominium_id=condominium_id)
+        target_session = session or self._default_session(condominium_id=condominium_id, resident=resident)
+        text = self._simulation_text(
+            condominium_id=condominium_id,
+            notification_type=notification_type,
+            station=target_station,
+            session=target_session,
+            agent_state=target_agent,
+            observed_at=now,
+            resident=resident,
+        )
+        if text is None:
+            return None
+        return self._deliver(
+            condominium_id=condominium_id,
+            resident=resident,
+            notification_type=notification_type,
+            dedupe_key=f"admin-sim:{notification_type}:{resident.id}:{now.isoformat()}",
+            text=text,
         )
 
     def send_agent_offline(
@@ -343,6 +472,8 @@ class ResidentTelegramNotificationService:
             return False
         mapping = {
             NOTIFICATION_TYPE_STATION_AVAILABLE: condo.telegram_station_available_enabled,
+            NOTIFICATION_TYPE_STATION_BUSY: condo.telegram_station_busy_enabled,
+            NOTIFICATION_TYPE_STATION_BACK_ONLINE: condo.telegram_station_back_online_enabled,
             NOTIFICATION_TYPE_CHARGING_COMPLETED: condo.telegram_charging_completed_enabled,
             NOTIFICATION_TYPE_AGENT_OFFLINE: condo.telegram_agent_offline_enabled,
             NOTIFICATION_TYPE_AGENT_RECOVERED: condo.telegram_agent_recovered_enabled,
@@ -353,6 +484,8 @@ class ResidentTelegramNotificationService:
     def _preference_clause(*, notification_type: str):
         mapping = {
             NOTIFICATION_TYPE_STATION_AVAILABLE: ResidentNotificationPreferences.station_available == 1,
+            NOTIFICATION_TYPE_STATION_BUSY: ResidentNotificationPreferences.station_busy == 1,
+            NOTIFICATION_TYPE_STATION_BACK_ONLINE: ResidentNotificationPreferences.station_back_online == 1,
             NOTIFICATION_TYPE_CHARGING_COMPLETED: ResidentNotificationPreferences.charging_completed == 1,
             NOTIFICATION_TYPE_AGENT_OFFLINE: ResidentNotificationPreferences.agent_offline == 1,
             NOTIFICATION_TYPE_AGENT_RECOVERED: ResidentNotificationPreferences.agent_recovered == 1,
@@ -405,9 +538,164 @@ class ResidentTelegramNotificationService:
         condo = self._db.get(Condominium, condominium_id)
         return condo.name if condo is not None else "CondoCharge"
 
+    def _build_station_busy_text(
+        self,
+        *,
+        condominium_id: int,
+        station: ChargingStation,
+        observed_at: datetime,
+    ) -> str:
+        return (
+            "🔴 Colonnina occupata\n\n"
+            f"La colonnina {station.name or station.host} e stata occupata.\n\n"
+            "Disponibilita attuale:\n"
+            f"{self._station_summary(condominium_id=condominium_id)}\n\n"
+            f"Osservato: {self._format_local_dt(observed_at)}"
+        )
+
+    def _build_station_back_online_text(
+        self,
+        *,
+        condominium_id: int,
+        station: ChargingStation,
+        observed_at: datetime,
+    ) -> str:
+        return (
+            "🟢 Colonnina tornata online\n\n"
+            f"La colonnina {station.name or station.host} e nuovamente disponibile per l'utilizzo.\n\n"
+            "Disponibilita attuale:\n"
+            f"{self._station_summary(condominium_id=condominium_id)}\n\n"
+            f"Osservato: {self._format_local_dt(observed_at)}"
+        )
+
+    def _simulation_text(
+        self,
+        *,
+        condominium_id: int,
+        notification_type: str,
+        station: ChargingStation | None,
+        session: ChargingSession | None,
+        agent_state: AgentState | None,
+        observed_at: datetime,
+        resident: AppUser,
+    ) -> str | None:
+        if notification_type == NOTIFICATION_TYPE_STATION_AVAILABLE and station is not None:
+            return (
+                "🧪 Test CondoCharge\n\n"
+                f"CondoCharge: station available\n"
+                f"Condominium: {self._condominium_name(condominium_id)}\n"
+                f"Station: {station.name or station.host}\n"
+                f"Observed at: {observed_at.isoformat()}"
+            )
+        if notification_type == NOTIFICATION_TYPE_STATION_BUSY and station is not None:
+            return self._build_station_busy_text(
+                condominium_id=condominium_id,
+                station=station,
+                observed_at=observed_at,
+            )
+        if notification_type == NOTIFICATION_TYPE_STATION_BACK_ONLINE and station is not None:
+            return self._build_station_back_online_text(
+                condominium_id=condominium_id,
+                station=station,
+                observed_at=observed_at,
+            )
+        if notification_type == NOTIFICATION_TYPE_CHARGING_COMPLETED and station is not None:
+            session_end = session.end_time if session is not None else observed_at
+            energy_wh = int(session.energy_wh) if session is not None else 6200
+            total_minutes = int(session.total_minutes) if session is not None else 60
+            return (
+                "🧪 Test CondoCharge\n\n"
+                "CondoCharge: charging session completed\n"
+                f"Condominium: {self._condominium_name(condominium_id)}\n"
+                f"Station: {station.name or station.host}\n"
+                f"Resident: {resident.username}\n"
+                f"Ended at: {self._as_utc(session_end).isoformat()}\n"
+                f"Energy: {energy_wh} Wh\n"
+                f"Duration: {total_minutes} minutes"
+            )
+        if notification_type == NOTIFICATION_TYPE_AGENT_OFFLINE and agent_state is not None:
+            return (
+                "🧪 Test CondoCharge\n\n"
+                "CondoCharge: agent offline\n"
+                f"Condominium: {self._condominium_name(condominium_id)}\n"
+                f"Agent: {agent_state.agent_id}\n"
+                f"Last heartbeat: {self._format_dt(agent_state.last_heartbeat_at)}\n"
+                f"Detected at: {observed_at.isoformat()}"
+            )
+        if notification_type == NOTIFICATION_TYPE_AGENT_RECOVERED and agent_state is not None:
+            return (
+                "🧪 Test CondoCharge\n\n"
+                "CondoCharge: agent recovered\n"
+                f"Condominium: {self._condominium_name(condominium_id)}\n"
+                f"Agent: {agent_state.agent_id}\n"
+                f"Last heartbeat: {self._format_dt(agent_state.last_heartbeat_at)}\n"
+                f"Detected at: {observed_at.isoformat()}"
+            )
+        return None
+
+    def _station_summary(self, *, condominium_id: int) -> str:
+        stations = self._db.scalars(
+            select(ChargingStation)
+            .where(ChargingStation.condominium_id == condominium_id)
+            .order_by(ChargingStation.id.asc())
+        ).all()
+        if not stations:
+            return "- Nessuna colonnina"
+        out: list[str] = []
+        for station in stations:
+            label = station.name or station.host
+            out.append(f"* {label}: {self._station_status_label(station.status)}")
+        return "\n".join(out)
+
     @staticmethod
-    def _station_transition_key(*, station_id: int, observed_at: datetime) -> str:
-        return f"station:{station_id}:transition:{observed_at.isoformat()}"
+    def _station_status_label(status: str | None) -> str:
+        normalized = ResidentTelegramNotificationService._normalize_transition_status(status)
+        if normalized == "available":
+            return "Libera"
+        if normalized == "busy":
+            return "Occupata"
+        return "Non disponibile"
+
+    def _default_station(self, *, condominium_id: int) -> ChargingStation | None:
+        return self._db.scalar(
+            select(ChargingStation)
+            .where(ChargingStation.condominium_id == condominium_id)
+            .order_by(ChargingStation.id.asc())
+            .limit(1)
+        )
+
+    def _default_agent_state(self, *, condominium_id: int) -> AgentState | None:
+        return self._db.scalar(
+            select(AgentState)
+            .where(AgentState.condominium_id == condominium_id)
+            .order_by(AgentState.id.asc())
+            .limit(1)
+        )
+
+    def _default_session(self, *, condominium_id: int, resident: AppUser) -> ChargingSession | None:
+        return self._db.scalar(
+            select(ChargingSession)
+            .join(RfidUser, RfidUser.id == ChargingSession.rfid_user_id)
+            .where(ChargingSession.condominium_id == condominium_id)
+            .where(RfidUser.app_user_id == resident.id)
+            .order_by(ChargingSession.end_time.desc(), ChargingSession.id.desc())
+            .limit(1)
+        )
+
+    @staticmethod
+    def _station_transition_key(*, station_id: int, observed_at: datetime, transition_name: str = "available") -> str:
+        return f"station:{station_id}:transition:{transition_name}:{observed_at.isoformat()}"
+
+    @staticmethod
+    def _normalize_transition_status(value: str | None) -> str:
+        normalized = str(value or "").strip().lower()
+        if normalized in _AVAILABLE_STATES:
+            return "available"
+        if normalized in _BUSY_STATES:
+            return "busy"
+        if normalized in _ONLINE_TRANSITION_STATES:
+            return "unavailable"
+        return normalized or "unavailable"
 
     @staticmethod
     def _chat_id(resident: AppUser) -> str | None:
@@ -426,6 +714,10 @@ class ResidentTelegramNotificationService:
         if value is None:
             return "-"
         return self._as_utc(value).isoformat()
+
+    def _format_local_dt(self, value: datetime | None) -> str:
+        formatted = self._as_utc(value).strftime("%Y-%m-%d %H:%M")
+        return formatted
 
 
 class TelegramStationAvailabilityNotificationPoller:
@@ -451,35 +743,64 @@ class TelegramStationAvailabilityNotificationPoller:
             created = 0
 
             for snapshot in snapshots:
-                previous_status = self._previous_statuses.get(snapshot.station_id)
-                self._previous_statuses[snapshot.station_id] = snapshot.computed_status
-                if previous_status not in NON_AVAILABLE_STATION_STATES:
-                    continue
-                if snapshot.computed_status != "available":
-                    continue
-
+                previous_raw = self._previous_statuses.get(snapshot.station_id)
+                previous_status = (
+                    ResidentTelegramNotificationService._normalize_transition_status(previous_raw)
+                    if previous_raw is not None
+                    else None
+                )
+                current_status = ResidentTelegramNotificationService._normalize_transition_status(snapshot.computed_status)
+                self._previous_statuses[snapshot.station_id] = current_status
                 station = db.get(ChargingStation, snapshot.station_id)
                 if station is None:
                     continue
 
+                event_name: str | None = None
+                if previous_status == "busy" and current_status == "available":
+                    event_name = NOTIFICATION_TYPE_STATION_AVAILABLE
+                elif previous_status == "available" and current_status == "busy":
+                    event_name = NOTIFICATION_TYPE_STATION_BUSY
+                elif previous_status == "unavailable" and current_status == "available":
+                    event_name = NOTIFICATION_TYPE_STATION_BACK_ONLINE
+
+                if event_name is None:
+                    continue
+
                 transition_key = service._station_transition_key(
                     station_id=snapshot.station_id,
+                    transition_name=event_name,
                     observed_at=snapshot.observed_at,
                 )
                 for resident in service.list_linked_residents(
                     condominium_id=snapshot.condominium_id,
-                    notification_type=NOTIFICATION_TYPE_STATION_AVAILABLE,
+                    notification_type=event_name,
                 ):
-                    if (
-                        service.send_station_available(
+                    row = None
+                    if event_name == NOTIFICATION_TYPE_STATION_AVAILABLE:
+                        row = service.send_station_available(
                             condominium_id=snapshot.condominium_id,
                             resident=resident,
                             station=station,
                             observed_at=snapshot.observed_at,
                             transition_key=transition_key,
                         )
-                        is not None
-                    ):
+                    elif event_name == NOTIFICATION_TYPE_STATION_BUSY:
+                        row = service.send_station_busy(
+                            condominium_id=snapshot.condominium_id,
+                            resident=resident,
+                            station=station,
+                            observed_at=snapshot.observed_at,
+                            transition_key=transition_key,
+                        )
+                    elif event_name == NOTIFICATION_TYPE_STATION_BACK_ONLINE:
+                        row = service.send_station_back_online(
+                            condominium_id=snapshot.condominium_id,
+                            resident=resident,
+                            station=station,
+                            observed_at=snapshot.observed_at,
+                            transition_key=transition_key,
+                        )
+                    if row is not None:
                         created += 1
 
             return created

@@ -17,7 +17,10 @@ from condocharge.app.services.telegram_notification_service import (
     NOTIFICATION_TYPE_AGENT_OFFLINE,
     NOTIFICATION_TYPE_AGENT_RECOVERED,
     NOTIFICATION_TYPE_CHARGING_COMPLETED,
+    NOTIFICATION_TYPE_COMMAND_TEST,
     NOTIFICATION_TYPE_STATION_AVAILABLE,
+    NOTIFICATION_TYPE_STATION_BACK_ONLINE,
+    NOTIFICATION_TYPE_STATION_BUSY,
     ResidentTelegramNotificationService,
     TelegramAgentStatusNotificationPoller,
     TelegramStationAvailabilityNotificationPoller,
@@ -118,6 +121,7 @@ def _seed_resident(
             app_user_id=resident.id,
             charging_completed=1,
             station_available=1,
+            station_busy=1,
             station_back_online=0,
             agent_offline=1,
             agent_recovered=1,
@@ -351,6 +355,7 @@ def test_api_resident_profile_and_admin_settings_include_telegram_fields(monkeyp
                 app_user_id=resident.id,
                 charging_completed=1,
                 station_available=1,
+                    station_busy=1,
                 station_back_online=0,
                 agent_offline=1,
                 agent_recovered=1,
@@ -387,10 +392,12 @@ def test_api_resident_profile_and_admin_settings_include_telegram_fields(monkeyp
 
     assert profile.status_code == 200
     assert profile.json()["telegram"]["linked"] is True
+    assert profile.json()["notification_preferences"]["station_busy"] is True
     assert profile.json()["notification_preferences"]["agent_offline"] is True
 
     assert settings.status_code == 200
     assert settings.json()["telegram_station_available_enabled"] is True
+    assert settings.json()["telegram_station_busy_enabled"] is False
     assert settings.json()["telegram_agent_recovered_enabled"] is True
 
     assert telegram_status.status_code == 200
@@ -576,3 +583,200 @@ def test_telegram_webhook_returns_ok_for_expired_token_even_if_failure_send_fail
         assert refreshed.telegram_linked_at is None
 
     get_settings.cache_clear()
+
+
+def test_telegram_webhook_help_handles_unknown_and_linked_chats(monkeypatch) -> None:
+    sent_texts: list[str] = []
+
+    def fake_send_message(self: TelegramBotService, *, chat_id: str, text: str) -> TelegramSendResult:
+        del self, chat_id
+        sent_texts.append(text)
+        return TelegramSendResult(message_id=str(len(sent_texts)))
+
+    monkeypatch.setattr(TelegramBotService, "send_message", fake_send_message)
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_USERNAME", "CondoChargeBot")
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_TOKEN", "telegram-token")
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        _seed_resident(db, condo=condo)
+
+    app = create_app()
+
+    def override_get_db_session() -> Iterator[Session]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    client = TestClient(app)
+
+    unknown = client.post("/api/v1/telegram/webhook", json={"message": {"text": "/help", "chat": {"id": 987654}}})
+    linked = client.post("/api/v1/telegram/webhook", json={"message": {"text": "/help", "chat": {"id": 123456}}})
+
+    assert unknown.status_code == 200
+    assert linked.status_code == 200
+    assert "Genera link Telegram" in sent_texts[0]
+    assert "/status" in sent_texts[1]
+
+    get_settings.cache_clear()
+
+
+def test_telegram_webhook_status_command_sends_status(monkeypatch) -> None:
+    sent_texts: list[str] = []
+
+    def fake_send_message(self: TelegramBotService, *, chat_id: str, text: str) -> TelegramSendResult:
+        del self, chat_id
+        sent_texts.append(text)
+        return TelegramSendResult(message_id="1")
+
+    monkeypatch.setattr(TelegramBotService, "send_message", fake_send_message)
+    import condocharge.api.v1.telegram as telegram_api
+
+    monkeypatch.setattr(telegram_api, "_status_message_for_resident", lambda *, db, resident: "status output")
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_USERNAME", "CondoChargeBot")
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_TOKEN", "telegram-token")
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        _seed_resident(db, condo=condo)
+
+    app = create_app()
+
+    def override_get_db_session() -> Iterator[Session]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    client = TestClient(app)
+
+    response = client.post("/api/v1/telegram/webhook", json={"message": {"text": "/status", "chat": {"id": 123456}}})
+
+    assert response.status_code == 200
+    assert sent_texts == ["status output"]
+
+    get_settings.cache_clear()
+
+
+def test_telegram_webhook_test_command_creates_audit_row(monkeypatch) -> None:
+    def fake_send_message(self: TelegramBotService, *, chat_id: str, text: str) -> TelegramSendResult:
+        del self, chat_id, text
+        return TelegramSendResult(message_id="55")
+
+    monkeypatch.setattr(TelegramBotService, "send_message", fake_send_message)
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_USERNAME", "CondoChargeBot")
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_TOKEN", "telegram-token")
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        _seed_resident(db, condo=condo)
+
+    app = create_app()
+
+    def override_get_db_session() -> Iterator[Session]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    client = TestClient(app)
+
+    response = client.post("/api/v1/telegram/webhook", json={"message": {"text": "/test", "chat": {"id": 123456}}})
+
+    assert response.status_code == 200
+    with session_factory() as db:
+        row = db.scalar(
+            select(ResidentNotificationHistory)
+            .where(ResidentNotificationHistory.notification_type == NOTIFICATION_TYPE_COMMAND_TEST)
+            .limit(1)
+        )
+        assert row is not None
+        assert row.status == "sent"
+        assert row.provider_message_id == "55"
+
+    get_settings.cache_clear()
+
+
+def test_telegram_station_poller_creates_busy_and_back_online_history() -> None:
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        settings = _build_settings(telegram_bot_token="")
+        condo = _seed_condo(db)
+        condo.telegram_station_busy_enabled = 1
+        condo.telegram_station_back_online_enabled = 1
+        db.commit()
+        resident = _seed_resident(db, condo=condo)
+        resident_prefs = db.scalar(
+            select(ResidentNotificationPreferences).where(ResidentNotificationPreferences.app_user_id == resident.id).limit(1)
+        )
+        assert resident_prefs is not None
+        resident_prefs.station_back_online = 1
+        db.commit()
+        station = _seed_station(db, condo=condo)
+        poller = TelegramStationAvailabilityNotificationPoller(
+            db_factory=session_factory,
+            settings=settings,
+            occupancy_fetcher=SequenceOccupancyFetcher(
+                [
+                    [
+                        StationAvailabilitySnapshot(
+                            station_id=station.id,
+                            condominium_id=condo.id,
+                            computed_status="available",
+                            observed_at=datetime.now(tz=UTC) - timedelta(minutes=3),
+                        )
+                    ],
+                    [
+                        StationAvailabilitySnapshot(
+                            station_id=station.id,
+                            condominium_id=condo.id,
+                            computed_status="busy",
+                            observed_at=datetime.now(tz=UTC) - timedelta(minutes=2),
+                        )
+                    ],
+                    [
+                        StationAvailabilitySnapshot(
+                            station_id=station.id,
+                            condominium_id=condo.id,
+                            computed_status="offline",
+                            observed_at=datetime.now(tz=UTC) - timedelta(minutes=1),
+                        )
+                    ],
+                    [
+                        StationAvailabilitySnapshot(
+                            station_id=station.id,
+                            condominium_id=condo.id,
+                            computed_status="available",
+                            observed_at=datetime.now(tz=UTC),
+                        )
+                    ],
+                ]
+            ),
+        )
+
+        assert poller.poll_once() == 0
+        assert poller.poll_once() == 1
+        assert poller.poll_once() == 0
+        assert poller.poll_once() == 1
+
+        rows = db.scalars(
+            select(ResidentNotificationHistory).order_by(ResidentNotificationHistory.created_at.asc(), ResidentNotificationHistory.id.asc())
+        ).all()
+        assert [row.notification_type for row in rows] == [
+            NOTIFICATION_TYPE_STATION_BUSY,
+            NOTIFICATION_TYPE_STATION_BACK_ONLINE,
+        ]
+        assert all(row.status == "preview" for row in rows)

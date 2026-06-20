@@ -1,15 +1,29 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, status
+from sqlalchemy import select
 
 from condocharge.api.deps import DbSession
+from condocharge.api.v1._helpers import station_latest_session
+from condocharge.api.v1.stations import (
+    _resolve_legrand_credentials,
+    _stations_db_occupancy,
+    _stations_hybrid_occupancy,
+    _stations_live_occupancy,
+)
 from condocharge.app.services.resident_telegram_link_service import ResidentTelegramLinkService, TelegramLinkError
 from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramDeliveryError
+from condocharge.app.services.telegram_notification_service import ResidentTelegramNotificationService
 from condocharge.core.config import get_settings
+from condocharge.models.charging import ChargingStation
+from condocharge.models.tenancy import AppUser, AppUserRole
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
+
+_KNOWN_COMMANDS = {"/start", "/help", "/status", "/test"}
 
 
 def _send_message_best_effort(*, bot_service: TelegramBotService, chat_id: str, text: str) -> None:
@@ -19,6 +33,149 @@ def _send_message_best_effort(*, bot_service: TelegramBotService, chat_id: str, 
         bot_service.send_message(chat_id=chat_id, text=text)
     except TelegramDeliveryError:
         return
+
+
+def _format_local_dt(value: datetime | None) -> str:
+    if value is None:
+        return "-"
+    if value.tzinfo is None or value.utcoffset() is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M")
+
+
+def _normalize_command(text: str, *, bot_username: str | None) -> tuple[str, str | None]:
+    parts = text.split(maxsplit=1)
+    command_part = (parts[0] if parts else "").strip()
+    command_name = command_part.split("@", maxsplit=1)[0].lower()
+    if bot_username and "@" in command_part:
+        command_target = command_part.split("@", maxsplit=1)[1].strip().lstrip("@").lower()
+        if command_target and command_target != bot_username.strip().lstrip("@").lower():
+            return "", None
+    argument = parts[1].strip() if len(parts) == 2 and parts[1].strip() else None
+    return command_name, argument
+
+
+def _unknown_chat_instructions(*, bot_username: str | None) -> str:
+    handle = f"@{bot_username}" if bot_username else "@CondoChargeBot"
+    return (
+        "CondoCharge Telegram non e ancora collegato.\n\n"
+        "1. Accedi al tuo profilo residente su CondoCharge.\n"
+        "2. Apri la sezione Telegram.\n"
+        "3. Premi 'Genera link Telegram'.\n"
+        f"4. Apri il bot {handle} dal link generato.\n\n"
+        "Dopo il collegamento potrai usare /help, /status e /test."
+    )
+
+
+def _help_message(*, condominium_name: str) -> str:
+    return (
+        "🔌 CondoCharge\n\n"
+        f"Condominio: {condominium_name}\n\n"
+        "Comandi disponibili:\n"
+        "/help - mostra questo riepilogo\n"
+        "/status - stato attuale delle colonnine del tuo condominio\n"
+        "/test - invia una notifica Telegram di test e registra un audit\n"
+        "/start - conferma il collegamento o mostra le istruzioni iniziali"
+    )
+
+
+def _masked_username(value: str | None) -> str | None:
+    normalized = (value or "").strip()
+    if not normalized:
+        return None
+    if len(normalized) <= 2:
+        return normalized[0] + "*"
+    return normalized[:2] + "***"
+
+
+def _status_icon(computed_status: str) -> str:
+    if computed_status == "free":
+        return "🟢"
+    if computed_status == "busy":
+        return "🔴"
+    return "⚫"
+
+
+def _status_label(computed_status: str) -> str:
+    if computed_status == "free":
+        return "Libera"
+    if computed_status == "busy":
+        return "Occupata"
+    return "Non disponibile"
+
+
+def _linked_resident_by_chat(*, db: DbSession, chat_id: str) -> AppUser | None:
+    return db.scalar(
+        select(AppUser)
+        .where(AppUser.telegram_chat_id == chat_id)
+        .where(AppUser.role == AppUserRole.RESIDENT.value)
+        .where(AppUser.is_active == 1)
+        .limit(1)
+    )
+
+
+def _status_message_for_resident(*, db: DbSession, resident: AppUser) -> str:
+    settings = get_settings()
+    stations = db.scalars(
+        select(ChargingStation)
+        .where(ChargingStation.condominium_id == resident.condominium_id)
+        .order_by(ChargingStation.id.asc())
+    ).all()
+    if not stations:
+        return (
+            "🔌 CondoCharge\n\n"
+            f"Condominio: {resident.condominium.name}\n\n"
+            "Nessuna colonnina configurata."
+        )
+
+    if settings.normalized_agent_occupancy_source == "db":
+        occupancy = _stations_db_occupancy(stations=stations)
+    elif settings.normalized_agent_occupancy_source == "live_only":
+        occupancy = _stations_live_occupancy(stations=stations, credentials=_resolve_legrand_credentials())
+    else:
+        occupancy = _stations_hybrid_occupancy(
+            stations=stations,
+            credentials=_resolve_legrand_credentials(),
+            stale_after_seconds=max(1, int(getattr(settings, "agent_stale_after_seconds", 180) or 180)),
+        )
+
+    latest_checked = max((item.last_checked_at for item in occupancy), default=None)
+    free_count = sum(1 for item in occupancy if item.computed_status == "free")
+    busy_count = sum(1 for item in occupancy if item.computed_status == "busy")
+    unavailable_count = len(occupancy) - free_count - busy_count
+    lines = [
+        "🔌 CondoCharge",
+        "",
+        f"Condominio: {resident.condominium.name}",
+        "",
+        f"Riepilogo disponibilita: {free_count} libera/e, {busy_count} occupata/e, {unavailable_count} non disponibile/i",
+        "",
+    ]
+
+    by_station_id = {item.station_id: item for item in occupancy}
+    for station in stations:
+        item = by_station_id.get(station.id)
+        if item is None:
+            continue
+        line = f"{station.name or station.host}: {_status_icon(item.computed_status)} {_status_label(item.computed_status)}"
+        extra: list[str] = []
+        if item.computed_status == "busy":
+            observed = station.last_seen_at or station.last_poll_at or item.last_checked_at
+            if observed is not None:
+                observed_utc = observed if observed.tzinfo is not None else observed.replace(tzinfo=UTC)
+                minutes = max(1, int((datetime.now(tz=UTC) - observed_utc.astimezone(UTC)).total_seconds() // 60))
+                extra.append(f"sessione attiva circa {minutes} min")
+            latest = station_latest_session(db, station_id=station.id)
+            if latest is not None and latest.rfid_user is not None:
+                masked = _masked_username(latest.rfid_user.name)
+                if masked:
+                    extra.append(f"ultimo residente {masked}")
+        if extra:
+            line += f" ({', '.join(extra)})"
+        lines.append(line)
+
+    lines.extend(["", f"Ultimo aggiornamento: {_format_local_dt(latest_checked)}"])
+    return "\n".join(lines)
 
 
 @router.post("/webhook", summary="Telegram bot webhook")
@@ -37,39 +194,72 @@ def telegram_webhook(
     chat = message.get("chat") or {}
     from_user = message.get("from") or {}
     chat_id = str(chat.get("id") or "").strip()
-    if not text.startswith("/start") or not chat_id:
+    if not text.startswith("/") or not chat_id:
         return {"ok": True}
 
-    parts = text.split(maxsplit=1)
-    if len(parts) != 2 or not parts[1].strip():
+    command, argument = _normalize_command(text, bot_username=settings.telegram_bot_username)
+    if command not in _KNOWN_COMMANDS:
         return {"ok": True}
 
-    token = parts[1].strip()
     bot_service = TelegramBotService(settings=settings)
+    resident = _linked_resident_by_chat(db=db, chat_id=chat_id)
     link_service = ResidentTelegramLinkService(
         db=db,
         settings=settings,
         deep_link_builder=lambda issued_token: bot_service.build_deep_link(token=issued_token),
     )
-    try:
-        resident = link_service.link_chat(
-            token=token,
-            chat_id=chat_id,
-            telegram_username=(from_user.get("username") or None),
-        )
+    if command == "/start" and argument:
+        try:
+            resident = link_service.link_chat(
+                token=argument,
+                chat_id=chat_id,
+                telegram_username=(from_user.get("username") or None),
+            )
+            _send_message_best_effort(
+                bot_service=bot_service,
+                chat_id=chat_id,
+                text=(
+                    f"CondoCharge linked successfully.\n"
+                    f"Resident: {resident.username}\n"
+                    f"You will now receive Telegram notifications."
+                ),
+            )
+        except TelegramLinkError:
+            _send_message_best_effort(
+                bot_service=bot_service,
+                chat_id=chat_id,
+                text="CondoCharge link failed. The Telegram link is invalid or expired.",
+            )
+        return {"ok": True}
+
+    if resident is None:
         _send_message_best_effort(
             bot_service=bot_service,
             chat_id=chat_id,
-            text=(
-                f"CondoCharge linked successfully.\n"
-                f"Resident: {resident.username}\n"
-                f"You will now receive Telegram notifications."
-            ),
+            text=_unknown_chat_instructions(bot_username=settings.telegram_bot_username.strip().lstrip("@") or None),
         )
-    except TelegramLinkError:
+        return {"ok": True}
+
+    if command in {"/start", "/help"}:
         _send_message_best_effort(
             bot_service=bot_service,
             chat_id=chat_id,
-            text="CondoCharge link failed. The Telegram link is invalid or expired.",
+            text=_help_message(condominium_name=resident.condominium.name),
+        )
+        return {"ok": True}
+
+    if command == "/status":
+        _send_message_best_effort(
+            bot_service=bot_service,
+            chat_id=chat_id,
+            text=_status_message_for_resident(db=db, resident=resident),
+        )
+        return {"ok": True}
+
+    if command == "/test":
+        notification_service = ResidentTelegramNotificationService(db=db, settings=settings, bot_service=bot_service)
+        notification_service.send_command_test(
+            condominium_id=resident.condominium_id,
+            resident=resident,
         )
     return {"ok": True}

@@ -14,7 +14,7 @@ const ResidentBillingPage = lazy(() => import("./pages/ResidentBillingPage"));
 const ResidentStationsStatusPage = lazy(() => import("./pages/ResidentStationsStatusPage"));
 const ResidentSessionsPage = lazy(() => import("./pages/ResidentSessionsPage"));
 const ResidentNotificationsPage = lazy(() => import("./pages/ResidentNotificationsPage"));
-const ResidentProfilePage = lazy(() => import("./pages/ResidentProfilePage"));
+const ResidentProfilePage = lazy(() => import("./pages/ResidentProfilePageTelegramV11"));
 const ResidentChangePasswordPage = lazy(() => import("./pages/ResidentChangePasswordPage"));
 const InvitationPage = lazy(() => import("./pages/InvitationPage"));
 const AdminResidentsPage = lazy(() => import("./pages/AdminResidentsPage"));

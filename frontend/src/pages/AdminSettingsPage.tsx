@@ -2,7 +2,9 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { endpoints } from "../shared/api/endpoints";
 import type {
+  AdminResidentRow,
   AdminSettingsResponse,
+  AdminTelegramSimulationResponse,
   AdminTelegramStatusResponse,
   AdminTelegramTestSendResponse,
   EmailHealthResponse,
@@ -11,16 +13,36 @@ import type {
 import { useQuery } from "../shared/hooks/useQuery";
 import { ErrorState, LoadingState, PageHead } from "../shared/ui";
 
+type AdminSettingsTelegramResponse = AdminSettingsResponse & {
+  telegram_station_busy_enabled: boolean;
+  telegram_station_back_online_enabled: boolean;
+};
+
+type TelegramSimulationEndpoints = typeof endpoints & {
+  simulateAdminTelegram: (params: {
+    resident_app_user_id: number;
+    notification_type: string;
+  }) => Promise<AdminTelegramSimulationResponse>;
+};
+
 export default function AdminSettingsPage() {
-  const fetcher = useMemo(() => () => endpoints.adminSettings(), []);
-  const settingsQuery = useQuery<AdminSettingsResponse>(fetcher);
+  const telegramEndpoints = endpoints as TelegramSimulationEndpoints;
+  const fetcher = useMemo(
+    () => async () => (await endpoints.adminSettings()) as AdminSettingsTelegramResponse,
+    [],
+  );
+  const settingsQuery = useQuery<AdminSettingsTelegramResponse>(fetcher);
   const emailHealthFetcher = useMemo(() => () => endpoints.adminEmailHealth(), []);
   const emailHealthQuery = useQuery<EmailHealthResponse>(emailHealthFetcher);
   const telegramStatusFetcher = useMemo(() => () => endpoints.adminTelegramStatus(), []);
   const telegramStatusQuery = useQuery<AdminTelegramStatusResponse>(telegramStatusFetcher);
+  const residentsFetcher = useMemo(() => () => endpoints.adminResidents(), []);
+  const residentsQuery = useQuery<AdminResidentRow[]>(residentsFetcher);
   const [price, setPrice] = useState("0.30");
   const [telegramSettings, setTelegramSettings] = useState({
     telegram_station_available_enabled: true,
+    telegram_station_busy_enabled: false,
+    telegram_station_back_online_enabled: false,
     telegram_charging_completed_enabled: true,
     telegram_agent_offline_enabled: true,
     telegram_agent_recovered_enabled: true,
@@ -36,12 +58,18 @@ export default function AdminSettingsPage() {
   const [sendingTelegramTest, setSendingTelegramTest] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<AdminTelegramTestSendResponse | null>(null);
   const [telegramTestError, setTelegramTestError] = useState<string | null>(null);
+  const [simResidentId, setSimResidentId] = useState("");
+  const [simulatingType, setSimulatingType] = useState<string | null>(null);
+  const [simulationResult, setSimulationResult] = useState<AdminTelegramSimulationResponse | null>(null);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!settingsQuery.data) return;
     setPrice(settingsQuery.data.energy_price_eur_per_kwh.toString());
     setTelegramSettings({
       telegram_station_available_enabled: settingsQuery.data.telegram_station_available_enabled,
+      telegram_station_busy_enabled: settingsQuery.data.telegram_station_busy_enabled,
+      telegram_station_back_online_enabled: settingsQuery.data.telegram_station_back_online_enabled,
       telegram_charging_completed_enabled: settingsQuery.data.telegram_charging_completed_enabled,
       telegram_agent_offline_enabled: settingsQuery.data.telegram_agent_offline_enabled,
       telegram_agent_recovered_enabled: settingsQuery.data.telegram_agent_recovered_enabled,
@@ -54,13 +82,15 @@ export default function AdminSettingsPage() {
     setMessage(null);
     setError(null);
     try {
-      const updated = await endpoints.updateAdminSettings({
+      const updated = (await endpoints.updateAdminSettings({
         energy_price_eur_per_kwh: Number(price),
         ...telegramSettings,
-      });
+      } as any)) as AdminSettingsTelegramResponse;
       setPrice(updated.energy_price_eur_per_kwh.toString());
       setTelegramSettings({
         telegram_station_available_enabled: updated.telegram_station_available_enabled,
+        telegram_station_busy_enabled: updated.telegram_station_busy_enabled,
+        telegram_station_back_online_enabled: updated.telegram_station_back_online_enabled,
         telegram_charging_completed_enabled: updated.telegram_charging_completed_enabled,
         telegram_agent_offline_enabled: updated.telegram_agent_offline_enabled,
         telegram_agent_recovered_enabled: updated.telegram_agent_recovered_enabled,
@@ -106,6 +136,25 @@ export default function AdminSettingsPage() {
     }
   }
 
+  async function runSimulation(notificationType: string) {
+    const residentId = Number(simResidentId);
+    if (!Number.isFinite(residentId) || residentId <= 0) return;
+    setSimulatingType(notificationType);
+    setSimulationError(null);
+    setSimulationResult(null);
+    try {
+      const payload = await telegramEndpoints.simulateAdminTelegram({
+        resident_app_user_id: residentId,
+        notification_type: notificationType,
+      });
+      setSimulationResult(payload);
+    } catch (err) {
+      setSimulationError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Simulazione Telegram non riuscita");
+    } finally {
+      setSimulatingType(null);
+    }
+  }
+
   return (
     <div>
       <PageHead title="Impostazioni" subtitle="Prezzo energia condominiale usato per stimare i costi di ricarica" />
@@ -117,6 +166,7 @@ export default function AdminSettingsPage() {
       {error ? <ErrorState title="Aggiornamento non riuscito" message={error} /> : null}
       {testError ? <ErrorState title="Test email non riuscito" message={testError} /> : null}
       {telegramTestError ? <ErrorState title="Test Telegram non riuscito" message={telegramTestError} /> : null}
+      {simulationError ? <ErrorState title="Simulazione Telegram non riuscita" message={simulationError} /> : null}
 
       <div className="grid">
         <div className="card" style={{ maxWidth: 480, gridColumn: "span 6" }}>
@@ -133,6 +183,22 @@ export default function AdminSettingsPage() {
                 onChange={(e) => setTelegramSettings((v) => ({ ...v, telegram_station_available_enabled: e.target.checked }))}
               />
               <span>Telegram: colonnina disponibile</span>
+            </label>
+            <label className="row" style={{ justifyContent: "flex-start" }}>
+              <input
+                type="checkbox"
+                checked={telegramSettings.telegram_station_busy_enabled}
+                onChange={(e) => setTelegramSettings((v) => ({ ...v, telegram_station_busy_enabled: e.target.checked }))}
+              />
+              <span>Telegram: colonnina occupata</span>
+            </label>
+            <label className="row" style={{ justifyContent: "flex-start" }}>
+              <input
+                type="checkbox"
+                checked={telegramSettings.telegram_station_back_online_enabled}
+                onChange={(e) => setTelegramSettings((v) => ({ ...v, telegram_station_back_online_enabled: e.target.checked }))}
+              />
+              <span>Telegram: colonnina tornata online</span>
             </label>
             <label className="row" style={{ justifyContent: "flex-start" }}>
               <input
@@ -224,6 +290,51 @@ export default function AdminSettingsPage() {
           </form>
           {telegramTestResult ? (
             <pre style={{ marginTop: 12, whiteSpace: "pre-wrap" }}>{JSON.stringify(telegramTestResult, null, 2)}</pre>
+          ) : null}
+        </div>
+
+        <div className="card" style={{ gridColumn: "span 12" }}>
+          <div className="card-title">Telegram Testing</div>
+          {residentsQuery.loading ? <LoadingState label="Caricamento residenti…" /> : null}
+          {residentsQuery.error ? (
+            <ErrorState title="Impossibile caricare i residenti" message={residentsQuery.error} onRetry={residentsQuery.refetch} />
+          ) : null}
+          <div className="auth-form">
+            <label className="auth-label">
+              Residente
+              <select className="auth-input" value={simResidentId} onChange={(e) => setSimResidentId(e.target.value)}>
+                <option value="">Seleziona residente</option>
+                {(residentsQuery.data ?? []).map((resident) => (
+                  <option key={resident.app_user_id} value={resident.app_user_id}>
+                    {resident.username} (#{resident.app_user_id})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="muted">Non modifica sessioni o stato delle colonnine: invia solo notifiche Telegram reali e crea il relativo audit.</div>
+            <div className="row" style={{ justifyContent: "flex-start", flexWrap: "wrap" }}>
+              {[
+                ["station_available", "Test Colonnina Disponibile"],
+                ["station_busy", "Test Colonnina Occupata"],
+                ["charging_completed", "Test Ricarica Completata"],
+                ["station_back_online", "Test Colonnina Tornata Online"],
+                ["agent_offline", "Test Agent Offline"],
+                ["agent_recovered", "Test Agent Ripristinato"],
+              ].map(([notificationType, label]) => (
+                <button
+                  key={notificationType}
+                  className="btn btn-secondary"
+                  type="button"
+                  disabled={!simResidentId || simulatingType !== null}
+                  onClick={() => runSimulation(notificationType)}
+                >
+                  {simulatingType === notificationType ? "Invio…" : label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {simulationResult ? (
+            <pre style={{ marginTop: 12, whiteSpace: "pre-wrap" }}>{JSON.stringify(simulationResult, null, 2)}</pre>
           ) : null}
         </div>
       </div>

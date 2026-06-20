@@ -1,7 +1,7 @@
 import { MemoryRouter } from "react-router-dom";
 import { render, screen, waitFor } from "@testing-library/react";
 
-import ResidentProfilePage from "./ResidentProfilePage";
+import ResidentProfilePage from "./ResidentProfilePageTelegramV11";
 
 const mocks = vi.hoisted(() => ({
   residentProfile: vi.fn(),
@@ -34,6 +34,7 @@ describe("ResidentProfilePage", () => {
       notification_preferences: {
         charging_completed: true,
         station_available: true,
+        station_busy: false,
         station_back_online: false,
         agent_offline: true,
         agent_recovered: true,
@@ -60,7 +61,7 @@ describe("ResidentProfilePage", () => {
     });
   });
 
-  it("renders Telegram status and new agent preference toggles", async () => {
+  it("renders Telegram status and notification toggles", async () => {
     render(
       <MemoryRouter>
         <ResidentProfilePage />
@@ -70,8 +71,10 @@ describe("ResidentProfilePage", () => {
     await waitFor(() => expect(mocks.residentProfile).toHaveBeenCalled());
     expect(screen.getByText("Telegram")).toBeInTheDocument();
     expect(screen.getByText("Collegato")).toBeInTheDocument();
+    expect(screen.getByText("Colonnina occupata")).toBeInTheDocument();
     expect(screen.getByText("Agente offline")).toBeInTheDocument();
     expect(screen.getByText("Agente ripristinato")).toBeInTheDocument();
     expect(screen.getByText("Genera link Telegram")).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("/help") && content.includes("/status") && content.includes("/test"))).toBeInTheDocument();
   });
 });

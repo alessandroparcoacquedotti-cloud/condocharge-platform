@@ -29,6 +29,8 @@ class Condominium(Base):
     is_active: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     energy_price_eur_per_kwh: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False, server_default="0.30")
     telegram_station_available_enabled: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    telegram_station_busy_enabled: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    telegram_station_back_online_enabled: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     telegram_charging_completed_enabled: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     telegram_agent_offline_enabled: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     telegram_agent_recovered_enabled: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
@@ -123,6 +125,7 @@ class ResidentNotificationPreferences(Base):
 
     charging_completed: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     station_available: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    station_busy: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     station_back_online: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     agent_offline: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     agent_recovered: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")

@@ -1,4 +1,4 @@
-export type PaginationMeta = {
+﻿export type PaginationMeta = {
   total: number;
   limit: number;
   offset: number;
@@ -702,3 +702,21 @@ export type AdminCostReportResponse = {
   total_estimated_cost_eur: number;
   by_resident: CostByResidentRow[];
 };
+export type AdminTelegramSimulationRequest = {
+  resident_app_user_id: number;
+  notification_type: string;
+};
+
+export type AdminTelegramSimulationResponse = {
+  resident_app_user_id: number;
+  resident_username: string;
+  notification_type: string;
+  delivery_status: string;
+  telegram_enabled: boolean;
+  provider_message_id: string | null;
+  audit_id: number | null;
+  audit_status: string | null;
+  message_preview: string;
+};
+
+

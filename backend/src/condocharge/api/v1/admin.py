@@ -489,6 +489,8 @@ def get_admin_settings(admin_user: AdminUser) -> AdminSettingsResponse:
     return AdminSettingsResponse(
         energy_price_eur_per_kwh=float(admin_user.condominium.energy_price_eur_per_kwh),
         telegram_station_available_enabled=bool(admin_user.condominium.telegram_station_available_enabled),
+        telegram_station_busy_enabled=bool(admin_user.condominium.telegram_station_busy_enabled),
+        telegram_station_back_online_enabled=bool(admin_user.condominium.telegram_station_back_online_enabled),
         telegram_charging_completed_enabled=bool(admin_user.condominium.telegram_charging_completed_enabled),
         telegram_agent_offline_enabled=bool(admin_user.condominium.telegram_agent_offline_enabled),
         telegram_agent_recovered_enabled=bool(admin_user.condominium.telegram_agent_recovered_enabled),
@@ -507,6 +509,8 @@ def update_admin_settings(
 ) -> AdminSettingsResponse:
     admin_user.condominium.energy_price_eur_per_kwh = Decimal(str(body.energy_price_eur_per_kwh))
     admin_user.condominium.telegram_station_available_enabled = 1 if body.telegram_station_available_enabled else 0
+    admin_user.condominium.telegram_station_busy_enabled = 1 if body.telegram_station_busy_enabled else 0
+    admin_user.condominium.telegram_station_back_online_enabled = 1 if body.telegram_station_back_online_enabled else 0
     admin_user.condominium.telegram_charging_completed_enabled = 1 if body.telegram_charging_completed_enabled else 0
     admin_user.condominium.telegram_agent_offline_enabled = 1 if body.telegram_agent_offline_enabled else 0
     admin_user.condominium.telegram_agent_recovered_enabled = 1 if body.telegram_agent_recovered_enabled else 0
@@ -515,6 +519,8 @@ def update_admin_settings(
     return AdminSettingsResponse(
         energy_price_eur_per_kwh=float(admin_user.condominium.energy_price_eur_per_kwh),
         telegram_station_available_enabled=bool(admin_user.condominium.telegram_station_available_enabled),
+        telegram_station_busy_enabled=bool(admin_user.condominium.telegram_station_busy_enabled),
+        telegram_station_back_online_enabled=bool(admin_user.condominium.telegram_station_back_online_enabled),
         telegram_charging_completed_enabled=bool(admin_user.condominium.telegram_charging_completed_enabled),
         telegram_agent_offline_enabled=bool(admin_user.condominium.telegram_agent_offline_enabled),
         telegram_agent_recovered_enabled=bool(admin_user.condominium.telegram_agent_recovered_enabled),

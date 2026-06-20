@@ -36,3 +36,20 @@ class AdminTelegramTestSendResponse(BaseModel):
     telegram_enabled: bool
     message_preview: str
     provider_message_id: str | None = None
+
+
+class AdminTelegramSimulationRequest(BaseModel):
+    resident_app_user_id: int = Field(ge=1)
+    notification_type: str = Field(min_length=1, max_length=64)
+
+
+class AdminTelegramSimulationResponse(BaseModel):
+    resident_app_user_id: int
+    resident_username: str
+    notification_type: str
+    delivery_status: str
+    telegram_enabled: bool
+    provider_message_id: str | None = None
+    audit_id: int | None = None
+    audit_status: str | None = None
+    message_preview: str

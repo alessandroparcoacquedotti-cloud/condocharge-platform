@@ -128,6 +128,8 @@ class AdminRfidUserRow(BaseModel):
 class AdminSettingsResponse(BaseModel):
     energy_price_eur_per_kwh: float
     telegram_station_available_enabled: bool
+    telegram_station_busy_enabled: bool
+    telegram_station_back_online_enabled: bool
     telegram_charging_completed_enabled: bool
     telegram_agent_offline_enabled: bool
     telegram_agent_recovered_enabled: bool
@@ -136,6 +138,8 @@ class AdminSettingsResponse(BaseModel):
 class UpdateAdminSettingsRequest(BaseModel):
     energy_price_eur_per_kwh: float = Field(ge=0)
     telegram_station_available_enabled: bool = True
+    telegram_station_busy_enabled: bool = False
+    telegram_station_back_online_enabled: bool = False
     telegram_charging_completed_enabled: bool = True
     telegram_agent_offline_enabled: bool = True
     telegram_agent_recovered_enabled: bool = True
@@ -163,6 +167,7 @@ class UpdateResidentRequest(BaseModel):
 class ResidentNotificationPreferencesResponse(BaseModel):
     charging_completed: bool
     station_available: bool
+    station_busy: bool
     station_back_online: bool
     agent_offline: bool
     agent_recovered: bool
@@ -171,6 +176,7 @@ class ResidentNotificationPreferencesResponse(BaseModel):
 class ResidentNotificationPreferencesUpdateRequest(BaseModel):
     charging_completed: bool
     station_available: bool
+    station_busy: bool
     station_back_online: bool
     agent_offline: bool
     agent_recovered: bool

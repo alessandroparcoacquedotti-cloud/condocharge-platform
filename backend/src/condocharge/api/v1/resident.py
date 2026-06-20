@@ -307,6 +307,7 @@ def _get_or_create_preferences(db: DbSession, *, current_user: CurrentUser) -> R
         app_user_id=current_user.id,
         charging_completed=1,
         station_available=1,
+        station_busy=0,
         station_back_online=0,
         agent_offline=1,
         agent_recovered=1,
@@ -337,6 +338,7 @@ def get_notification_preferences(db: DbSession, current_user: CurrentUser) -> Re
     return ResidentNotificationPreferencesResponse(
         charging_completed=bool(prefs.charging_completed),
         station_available=bool(prefs.station_available),
+        station_busy=bool(prefs.station_busy),
         station_back_online=bool(prefs.station_back_online),
         agent_offline=bool(prefs.agent_offline),
         agent_recovered=bool(prefs.agent_recovered),
@@ -357,6 +359,7 @@ def update_notification_preferences(
     prefs = _get_or_create_preferences(db, current_user=current_user)
     prefs.charging_completed = 1 if body.charging_completed else 0
     prefs.station_available = 1 if body.station_available else 0
+    prefs.station_busy = 1 if body.station_busy else 0
     prefs.station_back_online = 1 if body.station_back_online else 0
     prefs.agent_offline = 1 if body.agent_offline else 0
     prefs.agent_recovered = 1 if body.agent_recovered else 0
@@ -365,6 +368,7 @@ def update_notification_preferences(
     return ResidentNotificationPreferencesResponse(
         charging_completed=bool(prefs.charging_completed),
         station_available=bool(prefs.station_available),
+        station_busy=bool(prefs.station_busy),
         station_back_online=bool(prefs.station_back_online),
         agent_offline=bool(prefs.agent_offline),
         agent_recovered=bool(prefs.agent_recovered),
@@ -391,6 +395,7 @@ def get_profile(db: DbSession, current_user: CurrentUser) -> ResidentProfileResp
         notification_preferences=ResidentNotificationPreferencesResponse(
             charging_completed=bool(prefs.charging_completed),
             station_available=bool(prefs.station_available),
+            station_busy=bool(prefs.station_busy),
             station_back_online=bool(prefs.station_back_online),
             agent_offline=bool(prefs.agent_offline),
             agent_recovered=bool(prefs.agent_recovered),
