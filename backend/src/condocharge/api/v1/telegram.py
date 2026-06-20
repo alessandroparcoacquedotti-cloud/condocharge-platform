@@ -6,10 +6,19 @@ from fastapi import APIRouter, Header, HTTPException, status
 
 from condocharge.api.deps import DbSession
 from condocharge.app.services.resident_telegram_link_service import ResidentTelegramLinkService, TelegramLinkError
-from condocharge.app.services.telegram_bot_service import TelegramBotService
+from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramDeliveryError
 from condocharge.core.config import get_settings
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
+
+
+def _send_message_best_effort(*, bot_service: TelegramBotService, chat_id: str, text: str) -> None:
+    if not bot_service.enabled:
+        return
+    try:
+        bot_service.send_message(chat_id=chat_id, text=text)
+    except TelegramDeliveryError:
+        return
 
 
 @router.post("/webhook", summary="Telegram bot webhook")
@@ -48,19 +57,19 @@ def telegram_webhook(
             chat_id=chat_id,
             telegram_username=(from_user.get("username") or None),
         )
-        if bot_service.enabled:
-            bot_service.send_message(
-                chat_id=chat_id,
-                text=(
-                    f"CondoCharge linked successfully.\n"
-                    f"Resident: {resident.username}\n"
-                    f"You will now receive Telegram notifications."
-                ),
-            )
+        _send_message_best_effort(
+            bot_service=bot_service,
+            chat_id=chat_id,
+            text=(
+                f"CondoCharge linked successfully.\n"
+                f"Resident: {resident.username}\n"
+                f"You will now receive Telegram notifications."
+            ),
+        )
     except TelegramLinkError:
-        if bot_service.enabled:
-            bot_service.send_message(
-                chat_id=chat_id,
-                text="CondoCharge link failed. The Telegram link is invalid or expired.",
-            )
+        _send_message_best_effort(
+            bot_service=bot_service,
+            chat_id=chat_id,
+            text="CondoCharge link failed. The Telegram link is invalid or expired.",
+        )
     return {"ok": True}

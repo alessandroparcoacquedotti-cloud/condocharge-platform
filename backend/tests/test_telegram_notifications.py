@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime, timedelta
+from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -11,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 from condocharge.api.deps import get_db_session
 from condocharge.app.services.resident_notification_service import StationAvailabilitySnapshot
 from condocharge.app.services.resident_telegram_link_service import ResidentTelegramLinkService
-from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramSendResult
+from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramDeliveryError, TelegramSendResult
 from condocharge.app.services.telegram_notification_service import (
     NOTIFICATION_TYPE_AGENT_OFFLINE,
     NOTIFICATION_TYPE_AGENT_RECOVERED,
@@ -191,6 +192,24 @@ def test_resident_telegram_link_service_stores_chat_id() -> None:
         assert linked.telegram_linked_at is not None
         assert token_row is not None
         assert token_row.used_at is not None
+
+
+def test_resident_telegram_deep_link_round_trips_exact_token() -> None:
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        resident = _seed_resident(db, condo=condo, linked_telegram=False)
+        settings = _build_settings()
+        service = ResidentTelegramLinkService(
+            db=db,
+            settings=settings,
+            deep_link_builder=lambda token: f"https://t.me/CondoChargeBot?start={token}",
+        )
+
+        issue = service.issue_link(resident=resident)
+        parsed = parse_qs(urlparse(issue.deep_link_url or "").query)
+
+        assert parsed["start"] == [issue.token]
 
 
 def test_telegram_service_dedupes_charging_completed() -> None:
@@ -394,6 +413,9 @@ def test_telegram_webhook_links_resident(monkeypatch) -> None:
     with session_factory() as db:
         condo = _seed_condo(db)
         resident = _seed_resident(db, condo=condo, linked_telegram=False)
+        resident.telegram_username = None
+        resident.telegram_linked_at = None
+        db.commit()
         settings = _build_settings()
         link_service = ResidentTelegramLinkService(
             db=db,
@@ -431,5 +453,126 @@ def test_telegram_webhook_links_resident(monkeypatch) -> None:
         assert refreshed is not None
         assert refreshed.telegram_chat_id == "777"
         assert refreshed.telegram_username == "resident_bot"
+
+    get_settings.cache_clear()
+
+
+def test_telegram_webhook_links_resident_even_if_confirmation_send_fails(monkeypatch) -> None:
+    def failing_send_message(self: TelegramBotService, *, chat_id: str, text: str) -> TelegramSendResult:
+        del self, chat_id, text
+        raise TelegramDeliveryError("chat not found")
+
+    monkeypatch.setattr(TelegramBotService, "send_message", failing_send_message)
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_USERNAME", "CondoChargeBot")
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_TOKEN", "telegram-token")
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        resident = _seed_resident(db, condo=condo, linked_telegram=False)
+        resident.telegram_username = None
+        resident.telegram_linked_at = None
+        db.commit()
+        settings = _build_settings()
+        link_service = ResidentTelegramLinkService(
+            db=db,
+            settings=settings,
+            deep_link_builder=lambda token: f"https://t.me/CondoChargeBot?start={token}",
+        )
+        issue = link_service.issue_link(resident=resident)
+
+    app = create_app()
+
+    def override_get_db_session() -> Iterator[Session]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/telegram/webhook",
+        json={
+            "message": {
+                "text": f"/start {issue.token}",
+                "chat": {"id": 778},
+                "from": {"username": "resident_bot"},
+            }
+        },
+    )
+    assert response.status_code == 200
+
+    with session_factory() as db:
+        refreshed = db.scalar(select(AppUser).where(AppUser.username == "resident"))
+        assert refreshed is not None
+        assert refreshed.telegram_chat_id == "778"
+        assert refreshed.telegram_username == "resident_bot"
+
+    get_settings.cache_clear()
+
+
+def test_telegram_webhook_returns_ok_for_expired_token_even_if_failure_send_fails(monkeypatch) -> None:
+    def failing_send_message(self: TelegramBotService, *, chat_id: str, text: str) -> TelegramSendResult:
+        del self, chat_id, text
+        raise TelegramDeliveryError("chat not found")
+
+    monkeypatch.setattr(TelegramBotService, "send_message", failing_send_message)
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_USERNAME", "CondoChargeBot")
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_TOKEN", "telegram-token")
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        resident = _seed_resident(db, condo=condo, linked_telegram=False)
+        resident.telegram_username = None
+        resident.telegram_linked_at = None
+        db.commit()
+        settings = _build_settings()
+        link_service = ResidentTelegramLinkService(
+            db=db,
+            settings=settings,
+            deep_link_builder=lambda token: f"https://t.me/CondoChargeBot?start={token}",
+        )
+        issue = link_service.issue_link(resident=resident)
+        token_row = db.scalar(select(ResidentTelegramLinkToken).where(ResidentTelegramLinkToken.app_user_id == resident.id))
+        assert token_row is not None
+        token_row.expires_at = datetime.now(tz=UTC) - timedelta(minutes=1)
+        db.commit()
+
+    app = create_app()
+
+    def override_get_db_session() -> Iterator[Session]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/telegram/webhook",
+        json={
+            "message": {
+                "text": f"/start {issue.token}",
+                "chat": {"id": 779},
+                "from": {"username": "resident_bot"},
+            }
+        },
+    )
+    assert response.status_code == 200
+
+    with session_factory() as db:
+        refreshed = db.scalar(select(AppUser).where(AppUser.username == "resident"))
+        assert refreshed is not None
+        assert refreshed.telegram_chat_id is None
+        assert refreshed.telegram_username is None
+        assert refreshed.telegram_linked_at is None
 
     get_settings.cache_clear()
