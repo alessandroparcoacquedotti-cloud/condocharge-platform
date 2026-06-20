@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -38,6 +39,7 @@ from condocharge.models.tenancy import (
     ResidentNotificationPreferences,
     ResidentTelegramLinkToken,
 )
+from condocharge.schemas.api import StationOccupancyResponse
 
 
 class FakeTelegramApi:
@@ -240,7 +242,14 @@ def test_telegram_service_dedupes_charging_completed() -> None:
         assert len(rows) == 1
         assert rows[0].notification_type == NOTIFICATION_TYPE_CHARGING_COMPLETED
         assert rows[0].status == "sent"
-        assert len([call for call in api.calls if call[0] == "sendMessage"]) == 1
+        send_calls = [call for call in api.calls if call[0] == "sendMessage"]
+        assert len(send_calls) == 1
+        assert send_calls[0][1]["text"] == (
+            "🔋 Charging completed\n"
+            "Energy delivered: 6.2 kWh\n"
+            "Estimated cost: €1.86\n"
+            "Please free the charging space when convenient."
+        )
 
 
 def test_telegram_station_poller_creates_history_for_linked_residents() -> None:
@@ -621,7 +630,89 @@ def test_telegram_webhook_help_handles_unknown_and_linked_chats(monkeypatch) -> 
     assert unknown.status_code == 200
     assert linked.status_code == 200
     assert "Genera link Telegram" in sent_texts[0]
+    assert "/history" in sent_texts[0]
     assert "/status" in sent_texts[1]
+    assert "/history" in sent_texts[1]
+
+    get_settings.cache_clear()
+
+
+def test_status_message_uses_rome_time_and_hides_resident_details(monkeypatch) -> None:
+    import condocharge.api.v1.telegram as telegram_api
+
+    observed_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_AGENT_OCCUPANCY_SOURCE", "db")
+    monkeypatch.setenv("CONDOCHARGE_AGENT_STALE_AFTER_SECONDS", "600")
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        resident = _seed_resident(db, condo=condo)
+        station = _seed_station(db, condo=condo)
+        _seed_session(db, condo=condo, resident=resident, station=station, end_time=observed_at)
+
+        monkeypatch.setattr(
+            telegram_api,
+            "_stations_db_occupancy",
+            lambda *, stations: [
+                StationOccupancyResponse(
+                    station_id=stations[0].id,
+                    host=stations[0].host,
+                    connector_status="charging",
+                    computed_status="busy",
+                    last_checked_at=observed_at,
+                    source="db",
+                )
+            ],
+        )
+
+        message = telegram_api._status_message_for_resident(db=db, resident=resident)
+
+    assert "Garage A: 🔴 Occupata" in message
+    assert (
+        f"Ultimo aggiornamento: {observed_at.astimezone(ZoneInfo('Europe/Rome')).strftime('%Y-%m-%d %H:%M')}"
+        in message
+    )
+    assert "ultimo residente" not in message.lower()
+    assert "sessione attiva" not in message.lower()
+
+    get_settings.cache_clear()
+
+
+def test_status_message_hides_stale_timestamp(monkeypatch) -> None:
+    import condocharge.api.v1.telegram as telegram_api
+
+    stale_observed_at = datetime.now(tz=UTC) - timedelta(minutes=10)
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_AGENT_OCCUPANCY_SOURCE", "db")
+    monkeypatch.setenv("CONDOCHARGE_AGENT_STALE_AFTER_SECONDS", "60")
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        resident = _seed_resident(db, condo=condo)
+        station = _seed_station(db, condo=condo)
+
+        monkeypatch.setattr(
+            telegram_api,
+            "_stations_db_occupancy",
+            lambda *, stations: [
+                StationOccupancyResponse(
+                    station_id=stations[0].id,
+                    host=stations[0].host,
+                    connector_status="available",
+                    computed_status="free",
+                    last_checked_at=stale_observed_at,
+                    source="db",
+                )
+            ],
+        )
+
+        message = telegram_api._status_message_for_resident(db=db, resident=resident)
+
+    assert "Ultimo aggiornamento: dati in aggiornamento" in message
+    assert stale_observed_at.astimezone(ZoneInfo("Europe/Rome")).strftime("%Y-%m-%d %H:%M") not in message
 
     get_settings.cache_clear()
 
@@ -663,6 +754,77 @@ def test_telegram_webhook_status_command_sends_status(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert sent_texts == ["status output"]
+
+    get_settings.cache_clear()
+
+
+def test_telegram_webhook_history_command_sends_last_10_sessions(monkeypatch) -> None:
+    sent_texts: list[str] = []
+
+    def fake_send_message(self: TelegramBotService, *, chat_id: str, text: str) -> TelegramSendResult:
+        del self, chat_id
+        sent_texts.append(text)
+        return TelegramSendResult(message_id="1")
+
+    monkeypatch.setattr(TelegramBotService, "send_message", fake_send_message)
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_USERNAME", "CondoChargeBot")
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_TOKEN", "telegram-token")
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        resident = _seed_resident(db, condo=condo)
+        station = _seed_station(db, condo=condo)
+        rfid = RfidUser(
+            condominium_id=condo.id,
+            app_user_id=resident.id,
+            rfid_id="RFID-HISTORY",
+            name="History card",
+        )
+        db.add(rfid)
+        db.flush()
+        base_end_time = datetime(2026, 1, 1, 8, 0, tzinfo=UTC)
+        for index in range(12):
+            end_time = base_end_time + timedelta(days=index)
+            db.add(
+                ChargingSession(
+                    condominium_id=condo.id,
+                    source_key=f"history-{index}",
+                    station_id=station.id,
+                    rfid_user_id=rfid.id,
+                    start_time=end_time - timedelta(hours=2),
+                    end_time=end_time,
+                    energy_wh=(index + 1) * 1000,
+                    total_minutes=120,
+                    charging_minutes=100,
+                    idle_minutes=20,
+                    plug_type="Type2",
+                )
+            )
+        db.commit()
+
+    app = create_app()
+
+    def override_get_db_session() -> Iterator[Session]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    client = TestClient(app)
+
+    response = client.post("/api/v1/telegram/webhook", json={"message": {"text": "/history", "chat": {"id": 123456}}})
+
+    assert response.status_code == 200
+    assert len(sent_texts) == 1
+    assert "Ultime 10 sessioni di ricarica:" in sent_texts[0]
+    assert "2026-01-12 09:00 - 12 kWh - €3.60" in sent_texts[0]
+    assert "2026-01-03 09:00 - 3 kWh - €0.90" in sent_texts[0]
+    assert "2026-01-02 09:00" not in sent_texts[0]
+    assert "2026-01-01 09:00" not in sent_texts[0]
 
     get_settings.cache_clear()
 

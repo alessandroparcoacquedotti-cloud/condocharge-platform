@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import not_, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -40,6 +41,7 @@ _AVAILABLE_STATES = {"available", "free"}
 _BUSY_STATES = {"busy", "charging", "occupied"}
 _UNAVAILABLE_STATES = {"unavailable", "offline", "faulted", "unknown", "unreachable", "degraded"}
 _ONLINE_TRANSITION_STATES = {"checking", *sorted(_UNAVAILABLE_STATES)}
+_ROME_TZ = ZoneInfo("Europe/Rome")
 
 
 class ResidentTelegramNotificationService:
@@ -98,7 +100,7 @@ class ResidentTelegramNotificationService:
                 f"CondoCharge: station available\n"
                 f"Condominium: {self._condominium_name(condominium_id)}\n"
                 f"Station: {station.name or station.host}\n"
-                f"Observed at: {self._as_utc(observed_at).isoformat()}"
+                f"Observed at: {self._format_local_dt(observed_at)}"
             ),
         )
 
@@ -190,12 +192,10 @@ class ResidentTelegramNotificationService:
             notification_type=NOTIFICATION_TYPE_CHARGING_COMPLETED,
             dedupe_key=f"session:{session.id}",
             text=(
-                f"CondoCharge: charging session completed\n"
-                f"Condominium: {self._condominium_name(session.condominium_id)}\n"
-                f"Station: {station.name or station.host}\n"
-                f"Ended at: {self._as_utc(session.end_time).isoformat()}\n"
-                f"Energy: {int(session.energy_wh)} Wh\n"
-                f"Duration: {int(session.total_minutes)} minutes"
+                "🔋 Charging completed\n"
+                f"Energy delivered: {self._format_kwh_wh(session.energy_wh)} kWh\n"
+                f"Estimated cost: €{self._format_eur(self._estimated_cost_eur(session))}\n"
+                "Please free the charging space when convenient."
             ),
         )
 
@@ -216,7 +216,7 @@ class ResidentTelegramNotificationService:
                 "CondoCharge test notification\n"
                 f"Condominium: {self._condominium_name(condominium_id)}\n"
                 f"Resident: {resident.username}\n"
-                f"Requested at: {now.isoformat()}"
+                f"Requested at: {self._format_local_dt(now)}"
             ),
         )
 
@@ -585,7 +585,7 @@ class ResidentTelegramNotificationService:
                 f"CondoCharge: station available\n"
                 f"Condominium: {self._condominium_name(condominium_id)}\n"
                 f"Station: {station.name or station.host}\n"
-                f"Observed at: {observed_at.isoformat()}"
+                f"Observed at: {self._format_local_dt(observed_at)}"
             )
         if notification_type == NOTIFICATION_TYPE_STATION_BUSY and station is not None:
             return self._build_station_busy_text(
@@ -600,18 +600,13 @@ class ResidentTelegramNotificationService:
                 observed_at=observed_at,
             )
         if notification_type == NOTIFICATION_TYPE_CHARGING_COMPLETED and station is not None:
-            session_end = session.end_time if session is not None else observed_at
             energy_wh = int(session.energy_wh) if session is not None else 6200
-            total_minutes = int(session.total_minutes) if session is not None else 60
             return (
                 "🧪 Test CondoCharge\n\n"
-                "CondoCharge: charging session completed\n"
-                f"Condominium: {self._condominium_name(condominium_id)}\n"
-                f"Station: {station.name or station.host}\n"
-                f"Resident: {resident.username}\n"
-                f"Ended at: {self._as_utc(session_end).isoformat()}\n"
-                f"Energy: {energy_wh} Wh\n"
-                f"Duration: {total_minutes} minutes"
+                "🔋 Charging completed\n"
+                f"Energy delivered: {self._format_kwh_wh(energy_wh)} kWh\n"
+                f"Estimated cost: €{self._format_eur(self._estimated_cost_eur(session, condominium_id=condominium_id, fallback_energy_wh=energy_wh))}\n"
+                "Please free the charging space when convenient."
             )
         if notification_type == NOTIFICATION_TYPE_AGENT_OFFLINE and agent_state is not None:
             return (
@@ -620,7 +615,7 @@ class ResidentTelegramNotificationService:
                 f"Condominium: {self._condominium_name(condominium_id)}\n"
                 f"Agent: {agent_state.agent_id}\n"
                 f"Last heartbeat: {self._format_dt(agent_state.last_heartbeat_at)}\n"
-                f"Detected at: {observed_at.isoformat()}"
+                f"Detected at: {self._format_local_dt(observed_at)}"
             )
         if notification_type == NOTIFICATION_TYPE_AGENT_RECOVERED and agent_state is not None:
             return (
@@ -629,7 +624,7 @@ class ResidentTelegramNotificationService:
                 f"Condominium: {self._condominium_name(condominium_id)}\n"
                 f"Agent: {agent_state.agent_id}\n"
                 f"Last heartbeat: {self._format_dt(agent_state.last_heartbeat_at)}\n"
-                f"Detected at: {observed_at.isoformat()}"
+                f"Detected at: {self._format_local_dt(observed_at)}"
             )
         return None
 
@@ -713,11 +708,35 @@ class ResidentTelegramNotificationService:
     def _format_dt(self, value: datetime | None) -> str:
         if value is None:
             return "-"
-        return self._as_utc(value).isoformat()
+        return self._format_local_dt(value)
 
     def _format_local_dt(self, value: datetime | None) -> str:
-        formatted = self._as_utc(value).strftime("%Y-%m-%d %H:%M")
-        return formatted
+        return self._as_utc(value).astimezone(_ROME_TZ).strftime("%Y-%m-%d %H:%M")
+
+    @staticmethod
+    def _format_kwh_wh(energy_wh: int | None) -> str:
+        return ResidentTelegramNotificationService._format_kwh((int(energy_wh or 0)) / 1000.0)
+
+    @staticmethod
+    def _format_kwh(energy_kwh: float) -> str:
+        return f"{energy_kwh:.3f}".rstrip("0").rstrip(".") or "0"
+
+    @staticmethod
+    def _format_eur(amount: float) -> str:
+        return f"{amount:.2f}"
+
+    def _estimated_cost_eur(
+        self,
+        session: ChargingSession | None,
+        *,
+        condominium_id: int | None = None,
+        fallback_energy_wh: int | None = None,
+    ) -> float:
+        target_condominium_id = condominium_id or (session.condominium_id if session is not None else None)
+        condo = self._db.get(Condominium, target_condominium_id) if target_condominium_id is not None else None
+        price = float(condo.energy_price_eur_per_kwh) if condo is not None else 0.0
+        energy_wh = int(session.energy_wh) if session is not None else int(fallback_energy_wh or 0)
+        return round((energy_wh / 1000.0) * price, 2)
 
 
 class TelegramStationAvailabilityNotificationPoller:

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Header, HTTPException, status
 from sqlalchemy import select
 
 from condocharge.api.deps import DbSession
-from condocharge.api.v1._helpers import station_latest_session
+from condocharge.api.v1._helpers import session_detail_query
 from condocharge.api.v1.stations import (
     _resolve_legrand_credentials,
     _stations_db_occupancy,
@@ -18,12 +19,13 @@ from condocharge.app.services.resident_telegram_link_service import ResidentTele
 from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramDeliveryError
 from condocharge.app.services.telegram_notification_service import ResidentTelegramNotificationService
 from condocharge.core.config import get_settings
-from condocharge.models.charging import ChargingStation
+from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
 from condocharge.models.tenancy import AppUser, AppUserRole
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
-_KNOWN_COMMANDS = {"/start", "/help", "/status", "/test"}
+_KNOWN_COMMANDS = {"/start", "/help", "/status", "/test", "/history"}
+_ROME_TZ = ZoneInfo("Europe/Rome")
 
 
 def _send_message_best_effort(*, bot_service: TelegramBotService, chat_id: str, text: str) -> None:
@@ -40,7 +42,7 @@ def _format_local_dt(value: datetime | None) -> str:
         return "-"
     if value.tzinfo is None or value.utcoffset() is None:
         value = value.replace(tzinfo=UTC)
-    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M")
+    return value.astimezone(_ROME_TZ).strftime("%Y-%m-%d %H:%M")
 
 
 def _normalize_command(text: str, *, bot_username: str | None) -> tuple[str, str | None]:
@@ -63,7 +65,7 @@ def _unknown_chat_instructions(*, bot_username: str | None) -> str:
         "2. Apri la sezione Telegram.\n"
         "3. Premi 'Genera link Telegram'.\n"
         f"4. Apri il bot {handle} dal link generato.\n\n"
-        "Dopo il collegamento potrai usare /help, /status e /test."
+        "Dopo il collegamento potrai usare /help, /status, /history e /test."
     )
 
 
@@ -74,18 +76,10 @@ def _help_message(*, condominium_name: str) -> str:
         "Comandi disponibili:\n"
         "/help - mostra questo riepilogo\n"
         "/status - stato attuale delle colonnine del tuo condominio\n"
+        "/history - ultime 10 sessioni di ricarica\n"
         "/test - invia una notifica Telegram di test e registra un audit\n"
         "/start - conferma il collegamento o mostra le istruzioni iniziali"
     )
-
-
-def _masked_username(value: str | None) -> str | None:
-    normalized = (value or "").strip()
-    if not normalized:
-        return None
-    if len(normalized) <= 2:
-        return normalized[0] + "*"
-    return normalized[:2] + "***"
 
 
 def _status_icon(computed_status: str) -> str:
@@ -112,6 +106,23 @@ def _linked_resident_by_chat(*, db: DbSession, chat_id: str) -> AppUser | None:
         .where(AppUser.is_active == 1)
         .limit(1)
     )
+
+
+def _is_recent_timestamp(*, value: datetime | None, settings) -> bool:
+    if value is None:
+        return False
+    if value.tzinfo is None or value.utcoffset() is None:
+        value = value.replace(tzinfo=UTC)
+    stale_after_seconds = max(1, int(getattr(settings, "agent_stale_after_seconds", 180) or 180))
+    return value.astimezone(UTC) >= datetime.now(tz=UTC) - timedelta(seconds=stale_after_seconds)
+
+
+def _format_kwh_from_wh(energy_wh: int) -> str:
+    return f"{(int(energy_wh) / 1000.0):.3f}".rstrip("0").rstrip(".") or "0"
+
+
+def _format_eur(amount: float) -> str:
+    return f"{amount:.2f}"
 
 
 def _status_message_for_resident(*, db: DbSession, resident: AppUser) -> str:
@@ -157,24 +168,44 @@ def _status_message_for_resident(*, db: DbSession, resident: AppUser) -> str:
         item = by_station_id.get(station.id)
         if item is None:
             continue
-        line = f"{station.name or station.host}: {_status_icon(item.computed_status)} {_status_label(item.computed_status)}"
-        extra: list[str] = []
-        if item.computed_status == "busy":
-            observed = station.last_seen_at or station.last_poll_at or item.last_checked_at
-            if observed is not None:
-                observed_utc = observed if observed.tzinfo is not None else observed.replace(tzinfo=UTC)
-                minutes = max(1, int((datetime.now(tz=UTC) - observed_utc.astimezone(UTC)).total_seconds() // 60))
-                extra.append(f"sessione attiva circa {minutes} min")
-            latest = station_latest_session(db, station_id=station.id)
-            if latest is not None and latest.rfid_user is not None:
-                masked = _masked_username(latest.rfid_user.name)
-                if masked:
-                    extra.append(f"ultimo residente {masked}")
-        if extra:
-            line += f" ({', '.join(extra)})"
-        lines.append(line)
+        lines.append(f"{station.name or station.host}: {_status_icon(item.computed_status)} {_status_label(item.computed_status)}")
 
-    lines.extend(["", f"Ultimo aggiornamento: {_format_local_dt(latest_checked)}"])
+    lines.extend(
+        [
+            "",
+            (
+                f"Ultimo aggiornamento: {_format_local_dt(latest_checked)}"
+                if _is_recent_timestamp(value=latest_checked, settings=settings)
+                else "Ultimo aggiornamento: dati in aggiornamento"
+            ),
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _history_message_for_resident(*, db: DbSession, resident: AppUser) -> str:
+    sessions = (
+        db.scalars(
+            session_detail_query()
+            .join(ChargingSession.rfid_user)
+            .where(ChargingSession.condominium_id == resident.condominium_id)
+            .where(RfidUser.app_user_id == resident.id)
+            .order_by(ChargingSession.end_time.desc(), ChargingSession.id.desc())
+            .limit(10)
+        )
+        .unique()
+        .all()
+    )
+    if not sessions:
+        return "📊 Storico consumi\n\nNessuna sessione di ricarica registrata."
+
+    price = float(resident.condominium.energy_price_eur_per_kwh)
+    lines = ["📊 Storico consumi", "", "Ultime 10 sessioni di ricarica:"]
+    for session in sessions:
+        estimated_cost = round((int(session.energy_wh) / 1000.0) * price, 2)
+        lines.append(
+            f"{_format_local_dt(session.end_time)} - {_format_kwh_from_wh(int(session.energy_wh))} kWh - €{_format_eur(estimated_cost)}"
+        )
     return "\n".join(lines)
 
 
@@ -253,6 +284,14 @@ def telegram_webhook(
             bot_service=bot_service,
             chat_id=chat_id,
             text=_status_message_for_resident(db=db, resident=resident),
+        )
+        return {"ok": True}
+
+    if command == "/history":
+        _send_message_best_effort(
+            bot_service=bot_service,
+            chat_id=chat_id,
+            text=_history_message_for_resident(db=db, resident=resident),
         )
         return {"ok": True}
 

@@ -279,7 +279,7 @@ export default function ResidentProfilePageTelegramV11() {
                 </a>
               ) : null}
               {telegramIssue ? <div className="muted">Link valido fino a: {telegramIssue.expires_at}</div> : null}
-              <div className="muted">Comandi disponibili dopo il collegamento: /help, /status, /test</div>
+              <div className="muted">Comandi disponibili dopo il collegamento: /help, /status, /history, /test</div>
             </div>
             <div className="row" style={{ justifyContent: "flex-start", marginTop: 12 }}>
               <button className="btn" type="button" onClick={issueTelegramLink} disabled={linkingTelegram}>
