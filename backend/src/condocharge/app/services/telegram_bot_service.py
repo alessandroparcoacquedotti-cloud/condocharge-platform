@@ -98,6 +98,25 @@ class TelegramBotService:
             raise TelegramDeliveryError("Telegram API response did not include message_id.")
         return TelegramSendResult(message_id=str(message_id))
 
+    def pin_message(
+        self,
+        *,
+        chat_id: str,
+        message_id: str,
+        disable_notification: bool = True,
+    ) -> None:
+        if not self.enabled:
+            raise TelegramDeliveryError("Telegram bot token not configured.")
+
+        self._api_caller(
+            "pinChatMessage",
+            {
+                "chat_id": chat_id,
+                "message_id": int(message_id),
+                "disable_notification": bool(disable_notification),
+            },
+        )
+
     def _call_api(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
         token = self._settings.telegram_bot_token.strip()
         url = f"https://api.telegram.org/bot{token}/{method}"

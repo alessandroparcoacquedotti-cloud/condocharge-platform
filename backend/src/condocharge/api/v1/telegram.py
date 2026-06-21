@@ -17,7 +17,7 @@ from condocharge.api.v1.stations import (
 )
 from condocharge.app.services.resident_telegram_link_service import ResidentTelegramLinkService, TelegramLinkError
 from condocharge.app.services.queue_service import QueueDisabledError, QueueService
-from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramDeliveryError
+from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramDeliveryError, TelegramSendResult
 from condocharge.app.services.telegram_notification_service import ResidentTelegramNotificationService
 from condocharge.core.config import get_settings
 from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
@@ -26,10 +26,10 @@ from condocharge.models.tenancy import AppUser, AppUserRole
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 _KNOWN_COMMANDS = {"/start", "/help", "/status", "/test", "/history"}
-_BUTTON_JOIN_QUEUE = "Join Queue"
-_BUTTON_LEAVE_QUEUE = "Leave Queue"
-_BUTTON_VIEW_POSITION = "View Position"
-_BUTTON_REGULATIONS = "Regulations"
+_BUTTON_JOIN_QUEUE = "Entra in coda"
+_BUTTON_LEAVE_QUEUE = "Esci dalla coda"
+_BUTTON_VIEW_POSITION = "Posizione"
+_BUTTON_REGULATIONS = "Regolamento"
 _BUTTON_ACTIONS = {
     _BUTTON_JOIN_QUEUE: "join_queue",
     _BUTTON_LEAVE_QUEUE: "leave_queue",
@@ -45,19 +45,53 @@ def _send_message_best_effort(
     chat_id: str,
     text: str,
     reply_markup: dict[str, Any] | None = None,
-) -> None:
+) -> TelegramSendResult | None:
     if not bot_service.enabled:
-        return
+        return None
     try:
         if reply_markup is None:
-            bot_service.send_message(chat_id=chat_id, text=text)
+            return bot_service.send_message(chat_id=chat_id, text=text)
         else:
             try:
-                bot_service.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+                return bot_service.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
             except TypeError:
-                bot_service.send_message(chat_id=chat_id, text=text)
+                return bot_service.send_message(chat_id=chat_id, text=text)
+    except TelegramDeliveryError:
+        return None
+    return None
+
+
+def _pin_message_best_effort(
+    *,
+    bot_service: TelegramBotService,
+    chat_id: str,
+    message_id: str | None,
+) -> None:
+    if not bot_service.enabled or not message_id:
+        return
+    try:
+        bot_service.pin_message(chat_id=chat_id, message_id=message_id)
     except TelegramDeliveryError:
         return
+
+
+def _send_regulations_best_effort(
+    *,
+    bot_service: TelegramBotService,
+    chat_id: str,
+    condominium_name: str,
+) -> None:
+    result = _send_message_best_effort(
+        bot_service=bot_service,
+        chat_id=chat_id,
+        text=_queue_regulations_message(condominium_name=condominium_name),
+        reply_markup=_queue_keyboard(),
+    )
+    _pin_message_best_effort(
+        bot_service=bot_service,
+        chat_id=chat_id,
+        message_id=result.message_id if result is not None else None,
+    )
 
 
 def _format_local_dt(value: datetime | None) -> str:
@@ -118,13 +152,14 @@ def _queue_keyboard() -> dict[str, Any]:
 
 def _queue_regulations_message(*, condominium_name: str) -> str:
     return (
-        "Queue regulations\n\n"
-        f"Condominium: {condominium_name}\n\n"
-        "- FIFO waiting list\n"
-        "- Only your personal queue position is shown\n"
-        "- Resident names and queue roster are never shared\n"
-        "- Queue offers and reservation timing are not active in v1.2.0 yet\n"
-        "- Queue access depends on the administrator enabling the queue"
+        "📜 Regolamento CondoCharge\n\n"
+        f"Condominio: {condominium_name}\n\n"
+        "• Le assegnazioni seguono l'ordine della coda.\n"
+        "• Hai 30 minuti per iniziare la ricarica.\n"
+        "• Se non inizi entro il tempo previsto perdi il turno.\n"
+        "• Quando la ricarica termina, libera il posto appena possibile.\n"
+        "• Le prenotazioni sono attive dalle 08:00 alle 22:00.\n"
+        "• Le informazioni degli altri residenti non sono visibili."
     )
 
 
@@ -227,32 +262,27 @@ def _status_message_for_resident(*, db: DbSession, resident: AppUser) -> str:
         ]
     )
     queue_status = QueueService(db=db).get_resident_status(resident=resident)
-    lines.extend(
-        [
-            "",
-            "Queue",
-            f"Enabled: {'Yes' if queue_status.queue_enabled else 'No'}",
-            f"In queue: {'Yes' if queue_status.in_queue else 'No'}",
-        ]
-    )
-    if queue_status.in_queue and queue_status.position is not None:
-        lines.append(f"Your position: {queue_status.position}")
+    lines.extend(["", "Coda"])
+    if not queue_status.queue_enabled:
+        lines.append("Stato: non attiva")
+    elif queue_status.status == "offered":
+        lines.append("Stato: turno assegnato")
+    elif queue_status.in_queue and queue_status.position is not None:
+        lines.append(f"Posizione in coda: {queue_status.position}")
+    else:
+        lines.append("Stato: non sei in coda")
     return "\n".join(lines)
 
 
 def _queue_status_message(*, db: DbSession, resident: AppUser) -> str:
     status_row = QueueService(db=db).get_resident_status(resident=resident)
-    lines = [
-        "Queue status",
-        "",
-        f"Queue enabled: {'Yes' if status_row.queue_enabled else 'No'}",
-        f"In queue: {'Yes' if status_row.in_queue else 'No'}",
-    ]
+    if not status_row.queue_enabled:
+        return "La coda non e attiva in questo momento."
+    if status_row.status == "offered":
+        return "🟢 E il tuo turno.\n\nHai 30 minuti per iniziare la ricarica."
     if status_row.in_queue and status_row.position is not None:
-        lines.append(f"Your position: {status_row.position}")
-    if status_row.joined_at is not None:
-        lines.append(f"Joined at: {_format_local_dt(status_row.joined_at)}")
-    return "\n".join(lines)
+        return f"Posizione in coda: {status_row.position}"
+    return "Non sei attualmente in coda."
 
 
 def _history_message_for_resident(*, db: DbSession, resident: AppUser) -> str:
@@ -355,6 +385,12 @@ def telegram_webhook(
             chat_id=chat_id,
             text=_help_message(condominium_name=resident.condominium.name),
         )
+        if command == "/start":
+            _send_regulations_best_effort(
+                bot_service=bot_service,
+                chat_id=chat_id,
+                condominium_name=resident.condominium.name,
+            )
         return {"ok": True}
 
     if action == "join_queue":
@@ -396,11 +432,10 @@ def telegram_webhook(
         return {"ok": True}
 
     if action == "regulations":
-        _send_message_best_effort(
+        _send_regulations_best_effort(
             bot_service=bot_service,
             chat_id=chat_id,
-            text=_queue_regulations_message(condominium_name=resident.condominium.name),
-            reply_markup=_queue_keyboard(),
+            condominium_name=resident.condominium.name,
         )
         return {"ok": True}
 

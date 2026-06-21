@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from condocharge.db.base import Base
 
 QUEUE_ENTRY_STATUS_WAITING = "waiting"
+QUEUE_ENTRY_STATUS_OFFERED = "offered"
 QUEUE_ENTRY_STATUS_LEFT = "left"
 
 
@@ -49,8 +50,16 @@ class ChargingQueueEntry(Base):
         nullable=False,
         index=True,
     )
+    reserved_station_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("charging_stations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default=QUEUE_ENTRY_STATUS_WAITING)
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    reserved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reservation_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     leave_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
 

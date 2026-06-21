@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from condocharge.models.queue import (
     QUEUE_ENTRY_STATUS_LEFT,
+    QUEUE_ENTRY_STATUS_OFFERED,
     QUEUE_ENTRY_STATUS_WAITING,
     ChargingQueueEntry,
     ChargingQueueSettings,
@@ -59,7 +60,7 @@ class QueueService:
 
     def get_resident_status(self, *, resident: AppUser) -> ResidentQueueStatusResponse:
         settings = self.get_or_create_settings(condominium_id=resident.condominium_id)
-        active_entry = self._active_waiting_entry(resident=resident)
+        active_entry = self._active_entry(resident=resident)
         return ResidentQueueStatusResponse(
             queue_enabled=bool(settings.queue_enabled),
             in_queue=active_entry is not None,
@@ -74,7 +75,7 @@ class QueueService:
         if not settings.queue_enabled:
             raise QueueDisabledError("Queue is disabled")
 
-        active_entry = self._active_waiting_entry(resident=resident)
+        active_entry = self._active_entry(resident=resident)
         if active_entry is not None:
             return self.get_resident_status(resident=resident)
 
@@ -92,22 +93,181 @@ class QueueService:
         return self.get_resident_status(resident=resident)
 
     def leave_queue(self, *, resident: AppUser) -> ResidentQueueStatusResponse:
-        active_entry = self._active_waiting_entry(resident=resident)
+        active_entry = self._active_entry(resident=resident)
         if active_entry is None:
             return self.get_resident_status(resident=resident)
 
         active_entry.status = QUEUE_ENTRY_STATUS_LEFT
+        active_entry.reserved_station_id = None
+        active_entry.reserved_at = None
+        active_entry.reservation_expires_at = None
         active_entry.left_at = datetime.now(tz=UTC)
         active_entry.leave_reason = "resident_left"
         self._db.commit()
         return self.get_resident_status(resident=resident)
 
-    def _active_waiting_entry(self, *, resident: AppUser) -> ChargingQueueEntry | None:
+    def is_queue_enabled(self, *, condominium_id: int) -> bool:
+        return bool(self.get_or_create_settings(condominium_id=condominium_id).queue_enabled)
+
+    def active_count(self, *, condominium_id: int) -> int:
+        return int(
+            self._db.scalar(
+                select(func.count())
+                .select_from(ChargingQueueEntry)
+                .where(ChargingQueueEntry.condominium_id == condominium_id)
+                .where(ChargingQueueEntry.status.in_(self._active_statuses()))
+            )
+            or 0
+        )
+
+    def active_reservation_count(self, *, condominium_id: int) -> int:
+        return int(
+            self._db.scalar(
+                select(func.count())
+                .select_from(ChargingQueueEntry)
+                .where(ChargingQueueEntry.condominium_id == condominium_id)
+                .where(ChargingQueueEntry.status == QUEUE_ENTRY_STATUS_OFFERED)
+            )
+            or 0
+        )
+
+    def has_active_entries(self, *, condominium_id: int) -> bool:
+        return self.active_count(condominium_id=condominium_id) > 0
+
+    def promote_waiting_entries(
+        self,
+        *,
+        condominium_id: int,
+        station_ids: list[int],
+        reserved_at: datetime,
+        reservation_expires_at: datetime,
+    ) -> list[ChargingQueueEntry]:
+        if not station_ids or not self.is_queue_enabled(condominium_id=condominium_id):
+            return []
+
+        offered_station_ids = set(
+            self._db.scalars(
+                select(ChargingQueueEntry.reserved_station_id)
+                .where(ChargingQueueEntry.condominium_id == condominium_id)
+                .where(ChargingQueueEntry.status == QUEUE_ENTRY_STATUS_OFFERED)
+                .where(ChargingQueueEntry.reserved_station_id.is_not(None))
+            ).all()
+        )
+        free_station_ids = [station_id for station_id in station_ids if station_id not in offered_station_ids]
+        if not free_station_ids:
+            return []
+
+        waiting_rows = (
+            self._db.scalars(
+                select(ChargingQueueEntry)
+                .where(ChargingQueueEntry.condominium_id == condominium_id)
+                .where(ChargingQueueEntry.status == QUEUE_ENTRY_STATUS_WAITING)
+                .order_by(ChargingQueueEntry.joined_at.asc(), ChargingQueueEntry.id.asc())
+                .limit(len(free_station_ids))
+            ).all()
+        )
+        if not waiting_rows:
+            return []
+
+        rows: list[ChargingQueueEntry] = []
+        for station_id, row in zip(free_station_ids, waiting_rows, strict=False):
+            row.status = QUEUE_ENTRY_STATUS_OFFERED
+            row.reserved_station_id = station_id
+            row.reserved_at = reserved_at
+            row.reservation_expires_at = reservation_expires_at
+            row.left_at = None
+            row.leave_reason = None
+            rows.append(row)
+        self._db.commit()
+        for row in rows:
+            self._db.refresh(row)
+        return rows
+
+    def get_offered_entry_for_station(
+        self,
+        *,
+        condominium_id: int,
+        station_id: int,
+    ) -> ChargingQueueEntry | None:
+        return self._db.scalar(
+            select(ChargingQueueEntry)
+            .where(ChargingQueueEntry.condominium_id == condominium_id)
+            .where(ChargingQueueEntry.status == QUEUE_ENTRY_STATUS_OFFERED)
+            .where(ChargingQueueEntry.reserved_station_id == station_id)
+            .order_by(ChargingQueueEntry.reserved_at.asc(), ChargingQueueEntry.id.asc())
+            .limit(1)
+        )
+
+    def mark_started_reservation(
+        self,
+        *,
+        entry: ChargingQueueEntry,
+        started_at: datetime,
+    ) -> ChargingQueueEntry:
+        entry.status = QUEUE_ENTRY_STATUS_LEFT
+        entry.reserved_station_id = None
+        entry.reserved_at = None
+        entry.reservation_expires_at = None
+        entry.left_at = started_at
+        entry.leave_reason = "charging_started"
+        self._db.commit()
+        self._db.refresh(entry)
+        return entry
+
+    def cancel_offered_reservation(
+        self,
+        *,
+        entry: ChargingQueueEntry,
+        cancelled_at: datetime,
+        reason: str,
+    ) -> ChargingQueueEntry:
+        entry.status = QUEUE_ENTRY_STATUS_LEFT
+        entry.reserved_station_id = None
+        entry.reserved_at = None
+        entry.reservation_expires_at = None
+        entry.left_at = cancelled_at
+        entry.leave_reason = reason
+        self._db.commit()
+        self._db.refresh(entry)
+        return entry
+
+    def expire_overdue_reservations(
+        self,
+        *,
+        now: datetime,
+        condominium_id: int | None = None,
+    ) -> list[ChargingQueueEntry]:
+        query = (
+            select(ChargingQueueEntry)
+            .where(ChargingQueueEntry.status == QUEUE_ENTRY_STATUS_OFFERED)
+            .where(ChargingQueueEntry.reservation_expires_at.is_not(None))
+            .where(ChargingQueueEntry.reservation_expires_at <= now)
+            .order_by(ChargingQueueEntry.reservation_expires_at.asc(), ChargingQueueEntry.id.asc())
+        )
+        if condominium_id is not None:
+            query = query.where(ChargingQueueEntry.condominium_id == condominium_id)
+        rows = self._db.scalars(query).all()
+        if not rows:
+            return []
+
+        for row in rows:
+            row.status = QUEUE_ENTRY_STATUS_LEFT
+            row.reserved_station_id = None
+            row.reserved_at = None
+            row.reservation_expires_at = None
+            row.left_at = now
+            row.leave_reason = "reservation_expired"
+        self._db.commit()
+        for row in rows:
+            self._db.refresh(row)
+        return rows
+
+    def _active_entry(self, *, resident: AppUser) -> ChargingQueueEntry | None:
         return self._db.scalar(
             select(ChargingQueueEntry)
             .where(ChargingQueueEntry.condominium_id == resident.condominium_id)
             .where(ChargingQueueEntry.resident_app_user_id == resident.id)
-            .where(ChargingQueueEntry.status == QUEUE_ENTRY_STATUS_WAITING)
+            .where(ChargingQueueEntry.status.in_(self._active_statuses()))
             .order_by(ChargingQueueEntry.joined_at.asc(), ChargingQueueEntry.id.asc())
             .limit(1)
         )
@@ -129,7 +289,7 @@ class QueueService:
                 select(func.count())
                 .select_from(ChargingQueueEntry)
                 .where(ChargingQueueEntry.condominium_id == entry.condominium_id)
-                .where(ChargingQueueEntry.status == QUEUE_ENTRY_STATUS_WAITING)
+                .where(ChargingQueueEntry.status.in_(self._active_statuses()))
                 .where(
                     or_(
                         ChargingQueueEntry.joined_at < entry.joined_at,
@@ -143,3 +303,7 @@ class QueueService:
             or 0
         )
         return max(position, 1)
+
+    @staticmethod
+    def _active_statuses() -> tuple[str, ...]:
+        return (QUEUE_ENTRY_STATUS_WAITING, QUEUE_ENTRY_STATUS_OFFERED)

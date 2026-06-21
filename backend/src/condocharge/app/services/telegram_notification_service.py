@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -13,6 +14,7 @@ from condocharge.app.services.resident_notification_service import (
     NON_AVAILABLE_STATION_STATES,
     StationAvailabilitySnapshot,
 )
+from condocharge.app.services.queue_service import QueueService
 from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramDeliveryError
 from condocharge.core.config import Settings
 from condocharge.models.charging import AgentState, ChargingSession, ChargingStation, RfidUser
@@ -33,6 +35,11 @@ NOTIFICATION_TYPE_STATION_AVAILABLE = "station_available"
 NOTIFICATION_TYPE_STATION_BUSY = "station_busy"
 NOTIFICATION_TYPE_STATION_BACK_ONLINE = "station_back_online"
 NOTIFICATION_TYPE_CHARGING_COMPLETED = "charging_completed"
+NOTIFICATION_TYPE_CHARGING_COMPLETED_REMINDER = "charging_completed_reminder"
+NOTIFICATION_TYPE_CHARGING_COMPLETED_FINAL_REMINDER = "charging_completed_final_reminder"
+NOTIFICATION_TYPE_QUEUE_TURN = "queue_turn"
+NOTIFICATION_TYPE_QUEUE_RESERVATION_EXPIRED = "queue_reservation_expired"
+NOTIFICATION_TYPE_QUEUE_RESERVATION_CANCELLED = "queue_reservation_cancelled"
 NOTIFICATION_TYPE_AGENT_OFFLINE = "agent_offline"
 NOTIFICATION_TYPE_AGENT_RECOVERED = "agent_recovered"
 NOTIFICATION_TYPE_COMMAND_TEST = "command_test"
@@ -191,11 +198,109 @@ class ResidentTelegramNotificationService:
             resident=resident,
             notification_type=NOTIFICATION_TYPE_CHARGING_COMPLETED,
             dedupe_key=f"session:{session.id}",
+            text=self._build_charging_completed_text(
+                waiting_count=QueueService(db=self._db).active_count(condominium_id=session.condominium_id)
+            ),
+        )
+
+    def send_charging_completed_reminder(
+        self,
+        *,
+        session: ChargingSession,
+        resident: AppUser,
+        waiting_count: int,
+        final: bool,
+    ) -> ResidentNotificationHistory | None:
+        if session.end_time is None or not self._is_recent(session.end_time):
+            return None
+        if not self._notifications_enabled(
+            condominium_id=session.condominium_id,
+            resident=resident,
+            notification_type=NOTIFICATION_TYPE_CHARGING_COMPLETED,
+        ):
+            return None
+
+        reminder_minutes = (
+            self._settings.queue_completion_final_reminder_minutes
+            if final
+            else self._settings.queue_completion_reminder_minutes
+        )
+        notification_type = (
+            NOTIFICATION_TYPE_CHARGING_COMPLETED_FINAL_REMINDER
+            if final
+            else NOTIFICATION_TYPE_CHARGING_COMPLETED_REMINDER
+        )
+        return self._deliver(
+            condominium_id=session.condominium_id,
+            resident=resident,
+            notification_type=notification_type,
+            dedupe_key=f"session:{session.id}:reminder:{int(reminder_minutes)}",
+            text=self._build_charging_completed_reminder_text(
+                waiting_count=waiting_count,
+                reminder_minutes=int(reminder_minutes),
+                final=final,
+            ),
+        )
+
+    def send_queue_turn(
+        self,
+        *,
+        condominium_id: int,
+        resident: AppUser,
+        entry_id: int,
+    ) -> ResidentNotificationHistory | None:
+        if not self._settings.notifications_enabled:
+            return None
+        return self._deliver(
+            condominium_id=condominium_id,
+            resident=resident,
+            notification_type=NOTIFICATION_TYPE_QUEUE_TURN,
+            dedupe_key=f"queue-entry:{entry_id}:turn",
             text=(
-                "🔋 Charging completed\n"
-                f"Energy delivered: {self._format_kwh_wh(session.energy_wh)} kWh\n"
-                f"Estimated cost: €{self._format_eur(self._estimated_cost_eur(session))}\n"
-                "Please free the charging space when convenient."
+                "🟢 E il tuo turno.\n\n"
+                "Hai 30 minuti per iniziare la ricarica."
+            ),
+        )
+
+    def send_queue_reservation_expired(
+        self,
+        *,
+        condominium_id: int,
+        resident: AppUser,
+        entry_id: int,
+    ) -> ResidentNotificationHistory | None:
+        if not self._settings.notifications_enabled:
+            return None
+        return self._deliver(
+            condominium_id=condominium_id,
+            resident=resident,
+            notification_type=NOTIFICATION_TYPE_QUEUE_RESERVATION_EXPIRED,
+            dedupe_key=f"queue-entry:{entry_id}:expired",
+            text=(
+                "⌛ Tempo scaduto.\n\n"
+                "La prenotazione e stata annullata.\n\n"
+                "Se desideri ricaricare, puoi rientrare in coda."
+            ),
+        )
+
+    def send_queue_reservation_cancelled(
+        self,
+        *,
+        condominium_id: int,
+        resident: AppUser,
+        entry_id: int,
+    ) -> ResidentNotificationHistory | None:
+        if not self._settings.notifications_enabled:
+            return None
+        return self._deliver(
+            condominium_id=condominium_id,
+            resident=resident,
+            notification_type=NOTIFICATION_TYPE_QUEUE_RESERVATION_CANCELLED,
+            dedupe_key=f"queue-entry:{entry_id}:cancelled",
+            text=(
+                "⌛ Prenotazione annullata.\n\n"
+                "Il posto di ricarica non e piu disponibile.\n\n"
+                "Se desideri ricaricare, puoi rientrare in coda."
             ),
         )
 
@@ -568,6 +673,29 @@ class ResidentTelegramNotificationService:
             f"Osservato: {self._format_local_dt(observed_at)}"
         )
 
+    @staticmethod
+    def _build_charging_completed_text(*, waiting_count: int) -> str:
+        return (
+            "🔋 Ricarica completata\n\n"
+            "Ti chiediamo di liberare il posto di ricarica.\n\n"
+            f"Persone in attesa: {max(int(waiting_count), 0)}"
+        )
+
+    @staticmethod
+    def _build_charging_completed_reminder_text(
+        *,
+        waiting_count: int,
+        reminder_minutes: int,
+        final: bool,
+    ) -> str:
+        title = "⏰ Ultimo promemoria" if final else "⏰ Promemoria"
+        return (
+            f"{title}\n\n"
+            f"La tua ricarica e terminata da {int(reminder_minutes)} minuti.\n"
+            "Ti chiediamo di liberare il posto di ricarica appena possibile.\n\n"
+            f"Persone in attesa: {max(int(waiting_count), 0)}"
+        )
+
     def _simulation_text(
         self,
         *,
@@ -603,10 +731,9 @@ class ResidentTelegramNotificationService:
             energy_wh = int(session.energy_wh) if session is not None else 6200
             return (
                 "🧪 Test CondoCharge\n\n"
-                "🔋 Charging completed\n"
-                f"Energy delivered: {self._format_kwh_wh(energy_wh)} kWh\n"
-                f"Estimated cost: €{self._format_eur(self._estimated_cost_eur(session, condominium_id=condominium_id, fallback_energy_wh=energy_wh))}\n"
-                "Please free the charging space when convenient."
+                f"{self._build_charging_completed_text(waiting_count=0)}\n"
+                f"Energia test: {self._format_kwh_wh(energy_wh)} kWh\n"
+                f"Costo stimato test: €{self._format_eur(self._estimated_cost_eur(session, condominium_id=condominium_id, fallback_energy_wh=energy_wh))}"
             )
         if notification_type == NOTIFICATION_TYPE_AGENT_OFFLINE and agent_state is not None:
             return (
@@ -758,8 +885,12 @@ class TelegramStationAvailabilityNotificationPoller:
 
         with self._db_factory() as db:
             service = ResidentTelegramNotificationService(db=db, settings=self._settings)
+            queue_service = QueueService(db=db)
             snapshots = list(self._occupancy_fetcher(db=db))
             created = 0
+            free_station_ids_by_condo: dict[int, list[int]] = defaultdict(list)
+            busy_transition_station_ids_by_condo: dict[int, list[int]] = defaultdict(list)
+            status_by_station_id: dict[int, str] = {}
 
             for snapshot in snapshots:
                 previous_raw = self._previous_statuses.get(snapshot.station_id)
@@ -770,9 +901,14 @@ class TelegramStationAvailabilityNotificationPoller:
                 )
                 current_status = ResidentTelegramNotificationService._normalize_transition_status(snapshot.computed_status)
                 self._previous_statuses[snapshot.station_id] = current_status
+                status_by_station_id[snapshot.station_id] = current_status
                 station = db.get(ChargingStation, snapshot.station_id)
                 if station is None:
                     continue
+                if current_status == "available":
+                    free_station_ids_by_condo[snapshot.condominium_id].append(snapshot.station_id)
+                if previous_status == "available" and current_status == "busy":
+                    busy_transition_station_ids_by_condo[snapshot.condominium_id].append(snapshot.station_id)
 
                 event_name: str | None = None
                 if previous_status == "busy" and current_status == "available":
@@ -783,6 +919,12 @@ class TelegramStationAvailabilityNotificationPoller:
                     event_name = NOTIFICATION_TYPE_STATION_BACK_ONLINE
 
                 if event_name is None:
+                    continue
+                if (
+                    event_name == NOTIFICATION_TYPE_STATION_AVAILABLE
+                    and queue_service.is_queue_enabled(condominium_id=snapshot.condominium_id)
+                    and queue_service.has_active_entries(condominium_id=snapshot.condominium_id)
+                ):
                     continue
 
                 transition_key = service._station_transition_key(
@@ -822,7 +964,241 @@ class TelegramStationAvailabilityNotificationPoller:
                     if row is not None:
                         created += 1
 
+            observed_at = datetime.now(tz=UTC)
+            for condominium_id, station_ids in busy_transition_station_ids_by_condo.items():
+                created += self._resolve_busy_station_reservations(
+                    db=db,
+                    service=service,
+                    queue_service=queue_service,
+                    condominium_id=condominium_id,
+                    station_ids=station_ids,
+                    observed_at=observed_at,
+                )
+
+            expired_entries = queue_service.expire_overdue_reservations(now=observed_at)
+            for entry in expired_entries:
+                resident = db.get(AppUser, entry.resident_app_user_id)
+                if resident is None:
+                    continue
+                row = service.send_queue_reservation_expired(
+                    condominium_id=entry.condominium_id,
+                    resident=resident,
+                    entry_id=entry.id,
+                )
+                if row is not None:
+                    created += 1
+
+            if self._queue_assignments_active(now=observed_at):
+                created += self._send_due_completion_reminders(
+                    db=db,
+                    service=service,
+                    queue_service=queue_service,
+                    now=observed_at,
+                    status_by_station_id=status_by_station_id,
+                )
+                created += self._promote_waiting_residents(
+                    db=db,
+                    service=service,
+                    queue_service=queue_service,
+                    now=observed_at,
+                    free_station_ids_by_condo=free_station_ids_by_condo,
+                )
+
             return created
+
+    def _promote_waiting_residents(
+        self,
+        *,
+        db: Session,
+        service: ResidentTelegramNotificationService,
+        queue_service: QueueService,
+        now: datetime,
+        free_station_ids_by_condo: dict[int, list[int]],
+    ) -> int:
+        created = 0
+        grace_minutes = max(1, int(self._settings.queue_reservation_grace_minutes))
+        expires_at = now + timedelta(minutes=grace_minutes)
+        for condominium_id, station_ids in free_station_ids_by_condo.items():
+            if not station_ids or not queue_service.is_queue_enabled(condominium_id=condominium_id):
+                continue
+            promoted_entries = queue_service.promote_waiting_entries(
+                condominium_id=condominium_id,
+                station_ids=station_ids,
+                reserved_at=now,
+                reservation_expires_at=expires_at,
+            )
+            for entry in promoted_entries:
+                resident = db.get(AppUser, entry.resident_app_user_id)
+                if resident is None:
+                    continue
+                row = service.send_queue_turn(
+                    condominium_id=condominium_id,
+                    resident=resident,
+                    entry_id=entry.id,
+                )
+                if row is not None:
+                    created += 1
+        return created
+
+    def _resolve_busy_station_reservations(
+        self,
+        *,
+        db: Session,
+        service: ResidentTelegramNotificationService,
+        queue_service: QueueService,
+        condominium_id: int,
+        station_ids: list[int],
+        observed_at: datetime,
+    ) -> int:
+        created = 0
+        for station_id in station_ids:
+            entry = queue_service.get_offered_entry_for_station(
+                condominium_id=condominium_id,
+                station_id=station_id,
+            )
+            if entry is None:
+                continue
+
+            expires_at = ResidentTelegramNotificationService._as_utc(entry.reservation_expires_at)
+            if expires_at is None or observed_at > expires_at:
+                queue_service.cancel_offered_reservation(
+                    entry=entry,
+                    cancelled_at=observed_at,
+                    reason="reservation_expired_station_busy",
+                )
+                resident = db.get(AppUser, entry.resident_app_user_id)
+                if resident is None:
+                    continue
+                row = service.send_queue_reservation_expired(
+                    condominium_id=condominium_id,
+                    resident=resident,
+                    entry_id=entry.id,
+                )
+                if row is not None:
+                    created += 1
+                continue
+
+            matched_resident_app_user_id = self._matching_started_resident_app_user_id(
+                db=db,
+                entry=entry,
+                observed_at=observed_at,
+            )
+            if matched_resident_app_user_id == entry.resident_app_user_id:
+                queue_service.mark_started_reservation(entry=entry, started_at=observed_at)
+                continue
+
+            reason = (
+                "reservation_cancelled_station_taken_by_other_resident"
+                if matched_resident_app_user_id is not None
+                else "reservation_cancelled_station_busy_without_resident_mapping"
+            )
+            queue_service.cancel_offered_reservation(
+                entry=entry,
+                cancelled_at=observed_at,
+                reason=reason,
+            )
+            resident = db.get(AppUser, entry.resident_app_user_id)
+            if resident is None:
+                continue
+            row = service.send_queue_reservation_cancelled(
+                condominium_id=condominium_id,
+                resident=resident,
+                entry_id=entry.id,
+            )
+            if row is not None:
+                created += 1
+        return created
+
+    def _matching_started_resident_app_user_id(
+        self,
+        *,
+        db: Session,
+        entry,
+        observed_at: datetime,
+    ) -> int | None:
+        reserved_at = ResidentTelegramNotificationService._as_utc(entry.reserved_at)
+        expires_at = ResidentTelegramNotificationService._as_utc(entry.reservation_expires_at)
+        if reserved_at is None or expires_at is None or entry.reserved_station_id is None:
+            return None
+
+        latest_session = db.scalar(
+            select(ChargingSession)
+            .where(ChargingSession.condominium_id == entry.condominium_id)
+            .where(ChargingSession.station_id == entry.reserved_station_id)
+            .where(ChargingSession.start_time >= reserved_at)
+            .where(ChargingSession.start_time <= min(observed_at, expires_at))
+            .order_by(ChargingSession.start_time.desc(), ChargingSession.id.desc())
+            .limit(1)
+        )
+        if latest_session is None or latest_session.rfid_user_id is None:
+            return None
+        rfid_user = db.get(RfidUser, latest_session.rfid_user_id)
+        if rfid_user is None:
+            return None
+        return rfid_user.app_user_id
+
+    def _send_due_completion_reminders(
+        self,
+        *,
+        db: Session,
+        service: ResidentTelegramNotificationService,
+        queue_service: QueueService,
+        now: datetime,
+        status_by_station_id: dict[int, str],
+    ) -> int:
+        created = 0
+        reminder_minutes = max(1, int(self._settings.queue_completion_reminder_minutes))
+        final_minutes = max(reminder_minutes, int(self._settings.queue_completion_final_reminder_minutes))
+        window_start = now - timedelta(minutes=final_minutes + 5)
+        sessions = (
+            db.scalars(
+                select(ChargingSession)
+                .join(RfidUser, RfidUser.id == ChargingSession.rfid_user_id)
+                .where(RfidUser.app_user_id.is_not(None))
+                .where(ChargingSession.end_time >= window_start)
+                .order_by(ChargingSession.end_time.desc(), ChargingSession.id.desc())
+            )
+            .all()
+        )
+        for session in sessions:
+            if session.end_time is None:
+                continue
+            if status_by_station_id.get(session.station_id) != "busy":
+                continue
+            rfid_user = db.get(RfidUser, session.rfid_user_id) if session.rfid_user_id is not None else None
+            if rfid_user is None or rfid_user.app_user_id is None:
+                continue
+            resident = db.get(AppUser, rfid_user.app_user_id)
+            if resident is None:
+                continue
+            elapsed_minutes = (now - ResidentTelegramNotificationService._as_utc(session.end_time)).total_seconds() / 60.0
+            waiting_count = queue_service.active_count(condominium_id=session.condominium_id)
+            if elapsed_minutes >= final_minutes:
+                row = service.send_charging_completed_reminder(
+                    session=session,
+                    resident=resident,
+                    waiting_count=waiting_count,
+                    final=True,
+                )
+                if row is not None:
+                    created += 1
+                continue
+            if elapsed_minutes >= reminder_minutes:
+                row = service.send_charging_completed_reminder(
+                    session=session,
+                    resident=resident,
+                    waiting_count=waiting_count,
+                    final=False,
+                )
+                if row is not None:
+                    created += 1
+        return created
+
+    def _queue_assignments_active(self, *, now: datetime) -> bool:
+        local_hour = now.astimezone(_ROME_TZ).hour
+        start_hour = int(self._settings.queue_assignment_start_hour)
+        end_hour = int(self._settings.queue_assignment_end_hour)
+        return start_hour <= local_hour < end_hour
 
 
 class TelegramAgentStatusNotificationPoller:
