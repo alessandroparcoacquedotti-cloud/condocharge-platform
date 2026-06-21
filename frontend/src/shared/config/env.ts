@@ -1,4 +1,5 @@
-const DEFAULT_PROD_API_BASE_URL = "https://condocharge-prod.up.railway.app";
+const DEFAULT_PROD_API_BASE_URL = "https://condocharge-platform-production.up.railway.app";
+const DEFAULT_DEMO_CONDOMINIUM_NAME = "Riverview Residences";
 
 function normalizeString(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -13,5 +14,5 @@ function resolveApiBaseUrl(): string {
 
 export const env = {
   apiBaseUrl: resolveApiBaseUrl(),
-  defaultCondominiumName: import.meta.env.VITE_DEFAULT_CONDOMINIUM_NAME ?? "",
+  defaultCondominiumName: normalizeString(import.meta.env.VITE_DEFAULT_CONDOMINIUM_NAME) || DEFAULT_DEMO_CONDOMINIUM_NAME,
 } as const;
