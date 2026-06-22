@@ -35,7 +35,7 @@ from condocharge.core.config import Settings, get_settings
 from condocharge.core.security import hash_password
 from condocharge.db.base import Base
 from condocharge.main import create_app
-from condocharge.models.charging import AgentState, ChargingSession, ChargingStation, RfidUser
+from condocharge.models.charging import AgentState, ChargingSession, ChargingStation, RfidUser, StationStatusHistory
 from condocharge.models.queue import (
     QUEUE_ENTRY_STATUS_LEFT,
     QUEUE_ENTRY_STATUS_OFFERED,
@@ -1259,7 +1259,7 @@ def test_status_message_uses_rome_time_and_hides_resident_details(monkeypatch) -
         monkeypatch.setattr(
             telegram_api,
             "_stations_db_occupancy",
-            lambda *, stations: [
+            lambda *, db, stations, transition_source=None, transition_reason=None: [
                 StationOccupancyResponse(
                     station_id=stations[0].id,
                     host=stations[0].host,
@@ -1301,7 +1301,7 @@ def test_status_message_hides_stale_timestamp(monkeypatch) -> None:
         monkeypatch.setattr(
             telegram_api,
             "_stations_db_occupancy",
-            lambda *, stations: [
+            lambda *, db, stations, transition_source=None, transition_reason=None: [
                 StationOccupancyResponse(
                     station_id=stations[0].id,
                     host=stations[0].host,
@@ -1359,6 +1359,78 @@ def test_telegram_webhook_status_command_sends_status(monkeypatch) -> None:
     assert response.status_code == 200
     assert sent_texts == ["status output"]
 
+    get_settings.cache_clear()
+
+
+def test_telegram_webhook_status_command_does_not_spam_history_rows(monkeypatch) -> None:
+    sent_texts: list[str] = []
+
+    def fake_send_message(self: TelegramBotService, *, chat_id: str, text: str, reply_markup=None) -> TelegramSendResult:
+        del self, chat_id, reply_markup
+        sent_texts.append(text)
+        return TelegramSendResult(message_id=str(len(sent_texts)))
+
+    monkeypatch.setattr(TelegramBotService, "send_message", fake_send_message)
+    import condocharge.api.v1.telegram as telegram_api
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_AGENT_OCCUPANCY_SOURCE", "db")
+    monkeypatch.setenv("CONDOCHARGE_AGENT_STALE_AFTER_SECONDS", "600")
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_USERNAME", "CondoChargeBot")
+    monkeypatch.setenv("CONDOCHARGE_TELEGRAM_BOT_TOKEN", "telegram-token")
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        _seed_resident(db, condo=condo)
+        station = _seed_station(db, condo=condo)
+        station.status = "available"
+        station.status_source = "agent"
+        station.connector_status = "available"
+        station.last_seen_at = datetime.now(tz=UTC)
+        station.last_poll_at = datetime.now(tz=UTC)
+        db.commit()
+        for row in db.scalars(select(StationStatusHistory)).all():
+            db.delete(row)
+        db.commit()
+        db.add(
+            StationStatusHistory(
+                station_id=station.id,
+                host=station.host,
+                baseline_marker="i:unknown",
+                previous_status="unknown",
+                new_status="unavailable",
+                source="agent",
+                reason="seed unavailable baseline",
+                created_at=datetime(2026, 6, 18, 8, 0, tzinfo=UTC),
+            )
+        )
+        db.commit()
+
+    app = create_app()
+
+    def override_get_db_session() -> Iterator[Session]:
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    client = TestClient(app)
+
+    for _ in range(10):
+        response = client.post("/api/v1/telegram/webhook", json={"message": {"text": "/status", "chat": {"id": 123456}}})
+        assert response.status_code == 200
+
+    with session_factory() as db:
+        rows = db.scalars(select(StationStatusHistory).order_by(StationStatusHistory.id.asc())).all()
+        assert len(rows) == 2
+        assert rows[-1].previous_status == "unavailable"
+        assert rows[-1].new_status == "free"
+        assert rows[-1].source == "telegram_status"
+
+    assert len(sent_texts) == 10
     get_settings.cache_clear()
 
 

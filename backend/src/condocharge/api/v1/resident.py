@@ -274,13 +274,14 @@ def resident_station_occupancy(
     ).all()
     settings = get_settings()
     if settings.normalized_agent_occupancy_source == "db":
-        items = _stations_db_occupancy(stations=stations)
+        items = _stations_db_occupancy(db=None, stations=stations)
     elif settings.normalized_agent_occupancy_source == "live_only":
         credentials = _resolve_legrand_credentials()
-        items = _stations_live_occupancy(stations=stations, credentials=credentials)
+        items = _stations_live_occupancy(db=None, stations=stations, credentials=credentials)
     else:
         credentials = _resolve_legrand_credentials()
         items = _stations_hybrid_occupancy(
+            db=None,
             stations=stations,
             credentials=credentials,
             stale_after_seconds=max(1, int(getattr(settings, "agent_stale_after_seconds", 180) or 180)),

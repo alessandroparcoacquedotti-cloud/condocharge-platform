@@ -8,7 +8,10 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
+from condocharge.app.services import station_status_history_service as _station_status_history_service
 from condocharge.core.config import get_settings
+
+del _station_status_history_service
 
 
 def _resolve_sqlite_database_url(database_url: str) -> tuple[str, str | None]:

@@ -4,15 +4,16 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from condocharge.api.deps import get_db_session
+from condocharge.api.v1 import stations as stations_api
 from condocharge.core.security import hash_password
 from condocharge.db.base import Base
 from condocharge.main import create_app
-from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
+from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser, StationStatusHistory
 from condocharge.models.tenancy import AppUser, Condominium
 
 
@@ -92,7 +93,7 @@ def _seed_data(db: Session) -> dict[str, int]:
     }
 
 
-def _build_client() -> tuple[TestClient, dict[str, int]]:
+def _build_client_with_session() -> tuple[TestClient, dict[str, int], sessionmaker[Session]]:
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -115,6 +116,11 @@ def _build_client() -> tuple[TestClient, dict[str, int]]:
 
     app.dependency_overrides[get_db_session] = override_get_db_session
     client = TestClient(app)
+    return client, ids, TestingSessionLocal
+
+
+def _build_client() -> tuple[TestClient, dict[str, int]]:
+    client, ids, _ = _build_client_with_session()
     return client, ids
 
 
@@ -210,6 +216,109 @@ def test_dashboard_summary_returns_expected_metrics() -> None:
     assert payload["top_users_by_energy"][0]["total_energy_wh"] == 16000
 
 
+def test_station_history_endpoint_supports_filters() -> None:
+    client, ids, TestingSessionLocal = _build_client_with_session()
+    headers = _auth_headers(client)
+
+    with TestingSessionLocal() as db:
+        db.add_all(
+            [
+                StationStatusHistory(
+                    station_id=ids["station1_id"],
+                    host="192.168.1.200",
+                    baseline_marker="i:free",
+                    previous_status="free",
+                    new_status="busy",
+                    source="agent",
+                    reason="agent station update",
+                    created_at=datetime(2026, 6, 20, 8, 0, tzinfo=UTC),
+                ),
+                StationStatusHistory(
+                    station_id=ids["station1_id"],
+                    host="192.168.1.200",
+                    baseline_marker="h:1",
+                    previous_status="busy",
+                    new_status="free",
+                    source="live_poll",
+                    reason="station occupancy endpoint",
+                    created_at=datetime(2026, 6, 21, 8, 0, tzinfo=UTC),
+                ),
+                StationStatusHistory(
+                    station_id=ids["station2_id"],
+                    host="192.168.1.201",
+                    baseline_marker="i:free",
+                    previous_status="free",
+                    new_status="unavailable",
+                    source="telegram_status",
+                    reason="telegram /status",
+                    created_at=datetime(2026, 6, 22, 8, 0, tzinfo=UTC),
+                ),
+            ]
+        )
+        db.commit()
+
+    response = client.get(
+        "/api/v1/admin/station-history",
+        params={
+            "station_id": ids["station1_id"],
+            "date_from": "2026-06-20T00:00:00Z",
+            "date_to": "2026-06-20T23:59:59Z",
+            "status": "busy",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["station_id"] == ids["station1_id"]
+    assert payload["items"][0]["new_status"] == "busy"
+    assert payload["items"][0]["source"] == "agent"
+
+
+def test_stations_occupancy_endpoint_does_not_write_history(monkeypatch) -> None:
+    client, ids, TestingSessionLocal = _build_client_with_session()
+    headers = _auth_headers(client)
+
+    with TestingSessionLocal() as db:
+        station = db.get(ChargingStation, ids["station1_id"])
+        assert station is not None
+        station.status = "available"
+        station.connector_status = "available"
+        station.status_source = "agent"
+        db.commit()
+        for row in db.scalars(select(StationStatusHistory)).all():
+            db.delete(row)
+        db.commit()
+
+    original_db_occupancy = stations_api._stations_db_occupancy
+
+    def fake_db_occupancy(*, db, stations, transition_source=None, transition_reason=None):
+        del db, transition_source, transition_reason
+        return [
+            stations_api.StationOccupancyResponse(
+                station_id=stations[0].id,
+                host=stations[0].host,
+                connector_status="available",
+                computed_status="free",
+                last_checked_at=datetime(2026, 6, 22, 8, 0, tzinfo=UTC),
+                source="db",
+            )
+        ]
+
+    monkeypatch.setattr(stations_api, "_stations_db_occupancy", fake_db_occupancy)
+    monkeypatch.setenv("CONDOCHARGE_AGENT_OCCUPANCY_SOURCE", "db")
+    stations_api.get_settings.cache_clear()
+
+    response = client.get("/api/v1/stations/occupancy", headers=headers)
+    assert response.status_code == 200
+
+    with TestingSessionLocal() as db:
+        assert db.scalar(select(StationStatusHistory.id).limit(1)) is None
+
+    monkeypatch.setattr(stations_api, "_stations_db_occupancy", original_db_occupancy)
+    stations_api.get_settings.cache_clear()
+
+
 def test_openapi_includes_v1_routes() -> None:
     client, _ = _build_client()
 
@@ -220,3 +329,4 @@ def test_openapi_includes_v1_routes() -> None:
     assert "/api/v1/sessions" in paths
     assert "/api/v1/users" in paths
     assert "/api/v1/dashboard/summary" in paths
+    assert "/api/v1/admin/station-history" in paths

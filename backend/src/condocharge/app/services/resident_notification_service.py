@@ -46,7 +46,11 @@ class StationAvailabilitySnapshot:
 class LiveStationAvailabilityFetcher:
     def __call__(self, *, db: Session) -> Sequence[StationAvailabilitySnapshot]:
         stations = db.scalars(select(ChargingStation).order_by(ChargingStation.id.asc())).all()
-        occupancy = _stations_live_occupancy(stations=stations, credentials=_resolve_legrand_credentials())
+        occupancy = _stations_live_occupancy(
+            db=None,
+            stations=stations,
+            credentials=_resolve_legrand_credentials(),
+        )
 
         return [
             StationAvailabilitySnapshot(

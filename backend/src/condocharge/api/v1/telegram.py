@@ -221,15 +221,30 @@ def _status_message_for_resident(*, db: DbSession, resident: AppUser) -> str:
         )
 
     if settings.normalized_agent_occupancy_source == "db":
-        occupancy = _stations_db_occupancy(stations=stations)
+        occupancy = _stations_db_occupancy(
+            db=db,
+            stations=stations,
+            transition_source="telegram_status",
+            transition_reason="telegram /status",
+        )
     elif settings.normalized_agent_occupancy_source == "live_only":
-        occupancy = _stations_live_occupancy(stations=stations, credentials=_resolve_legrand_credentials())
+        occupancy = _stations_live_occupancy(
+            db=db,
+            stations=stations,
+            credentials=_resolve_legrand_credentials(),
+            transition_source="telegram_status",
+            transition_reason="telegram /status",
+        )
     else:
         occupancy = _stations_hybrid_occupancy(
+            db=db,
             stations=stations,
             credentials=_resolve_legrand_credentials(),
             stale_after_seconds=max(1, int(getattr(settings, "agent_stale_after_seconds", 180) or 180)),
+            transition_source="telegram_status",
+            transition_reason="telegram /status",
         )
+    db.flush()
 
     latest_checked = max((item.last_checked_at for item in occupancy), default=None)
     free_count = sum(1 for item in occupancy if item.computed_status == "free")
@@ -440,10 +455,12 @@ def telegram_webhook(
         return {"ok": True}
 
     if command == "/status":
+        text_out = _status_message_for_resident(db=db, resident=resident)
+        db.commit()
         _send_message_best_effort(
             bot_service=bot_service,
             chat_id=chat_id,
-            text=_status_message_for_resident(db=db, resident=resident),
+            text=text_out,
             reply_markup=_queue_keyboard(),
         )
         return {"ok": True}

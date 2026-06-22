@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+import os
+import tempfile
+import threading
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,10 +15,12 @@ from sqlalchemy.pool import StaticPool
 from condocharge.api.deps import get_db_session
 from condocharge.api.v1 import resident as resident_api
 from condocharge.api.v1 import stations as stations_api
+from condocharge.app.services.station_status_history_service import record_station_status_transition
+import condocharge.app.services.station_status_history_service as history_service
 from condocharge.core.security import hash_password
 from condocharge.db.base import Base
 from condocharge.main import create_app
-from condocharge.models.charging import AgentState, ChargingSession, ChargingStation
+from condocharge.models.charging import AgentState, ChargingSession, ChargingStation, StationStatusHistory
 from condocharge.models.tenancy import AppUser, Condominium
 
 
@@ -213,6 +218,237 @@ def test_status_ingestion_updates_station_fields(monkeypatch: pytest.MonkeyPatch
         assert station.rfid_enabled is True
         assert station.charging_state == "ready"
         assert station.last_status_payload_json is not None
+
+
+def test_status_ingestion_creates_transition_on_status_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, TestingSessionLocal, ids = _build_client(monkeypatch=monkeypatch)
+    resp = client.post(
+        "/api/v1/agent/stations/status/batch",
+        json={
+            "sent_at": "2026-06-18T08:37:10Z",
+            "stations": [
+                {
+                    "host": "192.168.1.200",
+                    "observed_at": "2026-06-18T08:37:07Z",
+                    "reachable": True,
+                    "connector_status": "available",
+                    "rfid_enabled": True,
+                    "charging_state": "ready",
+                    "last_error": None,
+                    "last_status_payload": {"state_text": "Connected"},
+                }
+            ],
+        },
+        headers=_agent_headers(condominium_id=ids["condo1_id"]),
+    )
+    assert resp.status_code == 200
+
+    with TestingSessionLocal() as db:
+        rows = db.scalars(select(StationStatusHistory).order_by(StationStatusHistory.id.asc())).all()
+        assert len(rows) == 1
+        assert rows[0].station_id == ids["station1_id"]
+        assert rows[0].host == "192.168.1.200"
+        assert rows[0].previous_status == "unknown"
+        assert rows[0].new_status == "free"
+        assert rows[0].source == "agent"
+
+
+def test_status_ingestion_does_not_create_transition_when_status_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, TestingSessionLocal, ids = _build_client(monkeypatch=monkeypatch)
+    body = {
+        "sent_at": "2026-06-18T08:37:10Z",
+        "stations": [
+            {
+                "host": "192.168.1.200",
+                "observed_at": "2026-06-18T08:37:07Z",
+                "reachable": True,
+                "connector_status": "available",
+                "rfid_enabled": True,
+                "charging_state": "ready",
+                "last_error": None,
+                "last_status_payload": {"state_text": "Connected"},
+            }
+        ],
+    }
+    first = client.post(
+        "/api/v1/agent/stations/status/batch",
+        json=body,
+        headers=_agent_headers(condominium_id=ids["condo1_id"]),
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        "/api/v1/agent/stations/status/batch",
+        json=body,
+        headers=_agent_headers(condominium_id=ids["condo1_id"]),
+    )
+    assert second.status_code == 200
+
+    with TestingSessionLocal() as db:
+        rows = db.scalars(select(StationStatusHistory).order_by(StationStatusHistory.id.asc())).all()
+        assert len(rows) == 1
+
+
+def test_mixed_source_transitions_use_latest_history_baseline(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, TestingSessionLocal, ids = _build_client(monkeypatch=monkeypatch)
+    del client
+
+    with TestingSessionLocal() as db:
+        station = db.get(ChargingStation, ids["station1_id"])
+        assert station is not None
+        record_station_status_transition(
+            db=db,
+            station=station,
+            new_status="free",
+            source="agent",
+            created_at=datetime(2026, 6, 18, 8, 0, tzinfo=UTC),
+        )
+        db.commit()
+
+    with TestingSessionLocal() as db:
+        station = db.get(ChargingStation, ids["station1_id"])
+        assert station is not None
+        station.status = "charging"
+        station.connector_status = "charging"
+        station.status_source = "agent"
+        db.commit()
+
+    with TestingSessionLocal() as db:
+        station = db.get(ChargingStation, ids["station1_id"])
+        assert station is not None
+        record_station_status_transition(
+            db=db,
+            station=station,
+            new_status="free",
+            source="live_poll",
+        )
+        db.commit()
+
+    with TestingSessionLocal() as db:
+        station = db.get(ChargingStation, ids["station1_id"])
+        assert station is not None
+        record_station_status_transition(
+            db=db,
+            station=station,
+            new_status="unavailable",
+            source="telegram_status",
+        )
+        db.commit()
+
+    with TestingSessionLocal() as db:
+        station = db.get(ChargingStation, ids["station1_id"])
+        assert station is not None
+        station.status = "available"
+        station.connector_status = "available"
+        station.status_source = "agent"
+        db.commit()
+
+    with TestingSessionLocal() as db:
+        rows = db.scalars(
+            select(StationStatusHistory)
+            .where(StationStatusHistory.station_id == ids["station1_id"])
+            .order_by(StationStatusHistory.id.asc())
+        ).all()
+        pairs = [(row.previous_status, row.new_status, row.source) for row in rows[1:]]
+        assert pairs == [
+            ("free", "busy", "agent"),
+            ("busy", "free", "live_poll"),
+            ("free", "unavailable", "telegram_status"),
+            ("unavailable", "free", "agent"),
+        ]
+
+
+def test_concurrent_writers_do_not_create_duplicate_transition_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CONDOCHARGE_AGENT_ENABLED", "true")
+    fd, db_path = tempfile.mkstemp(prefix="station-history-concurrency-", suffix=".sqlite3")
+    os.close(fd)
+    engine = create_engine(
+        f"sqlite:///{db_path}",
+        connect_args={"check_same_thread": False},
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, class_=Session)
+    Base.metadata.create_all(bind=engine)
+
+    try:
+        with TestingSessionLocal() as db:
+            condo = Condominium(name="Concurrency Condo")
+            db.add(condo)
+            db.flush()
+            db.add(
+                AppUser(
+                    condominium_id=condo.id,
+                    username="resident",
+                    password_hash=hash_password("password123"),
+                    role="resident",
+                    is_active=1,
+                )
+            )
+            station = ChargingStation(
+                condominium_id=condo.id,
+                host="192.168.1.200",
+                vendor="legrand_greenup",
+                name="A",
+                status="available",
+                status_source="agent",
+                connector_status="available",
+            )
+            db.add(station)
+            db.commit()
+            station_id = station.id
+
+        original_latest = history_service._latest_history_row
+        barrier = threading.Barrier(2)
+        errors: list[str] = []
+
+        def patched_latest(*, db: Session, station_id: int):
+            row = original_latest(db=db, station_id=station_id)
+            barrier.wait(timeout=5)
+            return row
+
+        history_service._latest_history_row = patched_latest
+
+        def agent_worker() -> None:
+            try:
+                with TestingSessionLocal() as db:
+                    station = db.get(ChargingStation, station_id)
+                    assert station is not None
+                    station.status = "charging"
+                    station.connector_status = "charging"
+                    station.status_source = "agent"
+                    db.commit()
+            except Exception as exc:  # pragma: no cover - assertion aid
+                errors.append(f"agent:{exc!r}")
+
+        def telegram_worker() -> None:
+            try:
+                with TestingSessionLocal() as db:
+                    station = db.get(ChargingStation, station_id)
+                    assert station is not None
+                    record_station_status_transition(
+                        db=db,
+                        station=station,
+                        new_status="busy",
+                        source="telegram_status",
+                    )
+                    db.commit()
+            except Exception as exc:  # pragma: no cover - assertion aid
+                errors.append(f"telegram:{exc!r}")
+
+        threads = [threading.Thread(target=agent_worker), threading.Thread(target=telegram_worker)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+    finally:
+        history_service._latest_history_row = original_latest
+        with TestingSessionLocal() as db:
+            rows = db.scalars(select(StationStatusHistory).order_by(StationStatusHistory.id.asc())).all()
+            assert len(rows) == 1
+            assert rows[0].previous_status == "free"
+            assert rows[0].new_status == "busy"
+        assert errors == []
+        engine.dispose()
+        os.remove(db_path)
 
 
 def test_status_ingestion_rejects_cross_tenant_host(monkeypatch: pytest.MonkeyPatch) -> None:

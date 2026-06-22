@@ -116,6 +116,21 @@ class StationOccupancyListResponse(BaseModel):
     items: list[StationOccupancyResponse]
 
 
+class StationStatusHistoryResponse(BaseModel):
+    id: int
+    station_id: int
+    host: str
+    previous_status: str
+    new_status: str
+    source: str
+    reason: str | None = None
+    created_at: datetime
+
+
+class StationStatusHistoryListResponse(BaseModel):
+    items: list[StationStatusHistoryResponse]
+
+
 class ResidentStationOccupancyResponse(BaseModel):
     station_id: int
     computed_status: str

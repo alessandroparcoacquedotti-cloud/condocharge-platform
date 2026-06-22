@@ -23,9 +23,10 @@ from condocharge.app.services.resident_invitation_service import (
     ResidentInvitationService,
 )
 from condocharge.app.services.session_sync_service import SessionSyncService
+from condocharge.app.services.station_status_history_service import station_status_transition_context
 from condocharge.core.config import get_settings
 from condocharge.core.security import hash_password
-from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
+from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser, StationStatusHistory
 from condocharge.models.tenancy import AppUser, AppUserRole, ResidentInvitationToken
 from condocharge.schemas.auth import (
     AppUserResponse,
@@ -34,6 +35,7 @@ from condocharge.schemas.auth import (
     SyncSessionsRequest,
     SyncSessionsResponse,
 )
+from condocharge.schemas.api import StationStatusHistoryListResponse, StationStatusHistoryResponse
 from condocharge.schemas.consumption import (
     AdminCostReportResponse,
     AdminResidentRow,
@@ -575,61 +577,108 @@ def poll_stations(db: DbSession, body: PollStationsRequest, admin_user: AdminUse
     try:
         items: list[PolledStationResponse] = []
         errors: list[str] = []
-        for host in hosts:
-            station = host_to_station.get(host)
-            if station is None:
-                errors.append(f"{host}: unknown station host")
-                continue
-            try:
-                driver.login(host, body.station_username, body.station_password)
-                snapshot = driver.get_status(
-                    StationTarget(
-                        station_id=str(station.id),
-                        name=station.name or f"Station #{station.id}",
-                        vendor=StationVendor.LEGRAND_GREENUP,
-                        host=host,
+        with station_status_transition_context(source="admin_poll", reason="admin station poll"):
+            for host in hosts:
+                station = host_to_station.get(host)
+                if station is None:
+                    errors.append(f"{host}: unknown station host")
+                    continue
+                try:
+                    driver.login(host, body.station_username, body.station_password)
+                    snapshot = driver.get_status(
+                        StationTarget(
+                            station_id=str(station.id),
+                            name=station.name or f"Station #{station.id}",
+                            vendor=StationVendor.LEGRAND_GREENUP,
+                            host=host,
+                        )
                     )
-                )
-                observed_at = snapshot.observed_at
-                connector = snapshot.connectors[0].status if snapshot.connectors else ConnectorStatus.UNKNOWN
-                availability = str(snapshot.availability)
-                raw_status = "offline" if availability == "offline" else str(connector).lower()
-                computed = _map_occupancy_status(
-                    connector_status=connector,
-                    station_status=raw_status,
-                    availability=availability,
-                    reachable=availability != "offline",
-                )
+                    observed_at = snapshot.observed_at
+                    connector = snapshot.connectors[0].status if snapshot.connectors else ConnectorStatus.UNKNOWN
+                    availability = str(snapshot.availability)
+                    raw_status = "offline" if availability == "offline" else str(connector).lower()
+                    computed = _map_occupancy_status(
+                        connector_status=connector,
+                        station_status=raw_status,
+                        availability=availability,
+                        reachable=availability != "offline",
+                    )
 
-                station.status = raw_status
-                station.status_source = "polling"
-                station.last_sync_at = observed_at
-                station_runtime = cast(Any, station)
-                station_runtime.active_session = str(connector).lower() == "charging"
-                station_runtime.active_session_source = "polling"
-                items.append(
-                    PolledStationResponse(
-                        station_id=station.id,
-                        host=host,
-                        observed_at=observed_at,
-                        availability=str(snapshot.availability),
-                        connector_status=str(connector),
-                        computed_status=computed,
+                    station.status = raw_status
+                    station.status_source = "polling"
+                    station.last_sync_at = observed_at
+                    station_runtime = cast(Any, station)
+                    station_runtime.active_session = str(connector).lower() == "charging"
+                    station_runtime.active_session_source = "polling"
+                    items.append(
+                        PolledStationResponse(
+                            station_id=station.id,
+                            host=host,
+                            observed_at=observed_at,
+                            availability=str(snapshot.availability),
+                            connector_status=str(connector),
+                            computed_status=computed,
+                        )
                     )
-                )
-            except Exception as exc:
-                station.status = "offline"
-                station.status_source = "polling"
-                station.last_sync_at = datetime.now(tz=UTC)
-                station_runtime = cast(Any, station)
-                station_runtime.active_session = False
-                station_runtime.active_session_source = "polling"
-                errors.append(f"{host}: {type(exc).__name__}: {exc}")
+                except Exception as exc:
+                    station.status = "offline"
+                    station.status_source = "polling"
+                    station.last_sync_at = datetime.now(tz=UTC)
+                    station_runtime = cast(Any, station)
+                    station_runtime.active_session = False
+                    station_runtime.active_session_source = "polling"
+                    errors.append(f"{host}: {type(exc).__name__}: {exc}")
 
         db.commit()
         return PollStationsResponse(items=items, errors=errors)
     finally:
         driver.close()
+
+
+@router.get(
+    "/station-history",
+    response_model=StationStatusHistoryListResponse,
+    summary="List station status transitions (admin only)",
+)
+def list_station_status_history(
+    db: DbSession,
+    admin_user: AdminUser,
+    station_id: Annotated[int | None, Query(ge=1)] = None,
+    date_from: Annotated[datetime | None, Query()] = None,
+    date_to: Annotated[datetime | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
+) -> StationStatusHistoryListResponse:
+    query = (
+        select(StationStatusHistory)
+        .join(ChargingStation, ChargingStation.id == StationStatusHistory.station_id)
+        .where(ChargingStation.condominium_id == admin_user.condominium_id)
+        .order_by(StationStatusHistory.created_at.desc(), StationStatusHistory.id.desc())
+    )
+    if station_id is not None:
+        query = query.where(StationStatusHistory.station_id == station_id)
+    if date_from is not None:
+        query = query.where(StationStatusHistory.created_at >= date_from)
+    if date_to is not None:
+        query = query.where(StationStatusHistory.created_at <= date_to)
+    if status is not None and status.strip():
+        query = query.where(StationStatusHistory.new_status == status.strip().lower())
+
+    rows = db.scalars(query).all()
+    return StationStatusHistoryListResponse(
+        items=[
+            StationStatusHistoryResponse(
+                id=row.id,
+                station_id=row.station_id,
+                host=row.host,
+                previous_status=row.previous_status,
+                new_status=row.new_status,
+                source=row.source,
+                reason=row.reason,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+    )
 
 
 @router.post(

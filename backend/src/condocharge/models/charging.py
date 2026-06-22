@@ -81,6 +81,33 @@ class ChargingStation(Base):
     )
 
 
+class StationStatusHistory(Base):
+    __tablename__ = "station_status_history"
+    __table_args__ = (
+        UniqueConstraint(
+            "station_id",
+            "baseline_marker",
+            "new_status",
+            name="uq_station_status_history_station_baseline_new",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    station_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("charging_stations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    host: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    baseline_marker: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+
 class AgentState(Base):
     __tablename__ = "agent_states"
     __table_args__ = (

@@ -21,6 +21,7 @@ from condocharge.app.integrations.base.models import (
     ConnectorStatus,
 )
 from condocharge.app.integrations.legrand.driver import LegrandGreenUpDriver
+from condocharge.app.services.station_status_history_service import record_station_status_transition
 from condocharge.core.config import get_settings
 from condocharge.models.charging import ChargingStation
 from condocharge.schemas.api import (
@@ -181,12 +182,15 @@ def _resolve_legrand_credentials() -> tuple[str, str] | None:
 
 def _station_occupancy_snapshot(
     *,
+    db: DbSession | None = None,
     station: ChargingStation,
     credentials: tuple[str, str] | None,
+    transition_source: str | None = None,
+    transition_reason: str | None = None,
 ) -> StationOccupancyResponse:
     now = datetime.now(tz=UTC)
     if credentials is None:
-        return StationOccupancyResponse(
+        response = StationOccupancyResponse(
             station_id=station.id,
             host=station.host,
             connector_status=None,
@@ -194,6 +198,16 @@ def _station_occupancy_snapshot(
             last_checked_at=now,
             source="live",
         )
+        if db is not None and transition_source is not None:
+            record_station_status_transition(
+                db=db,
+                station=station,
+                new_status=response.computed_status,
+                source=transition_source,
+                reason=transition_reason,
+                created_at=response.last_checked_at,
+            )
+        return response
 
     try:
         username, password = credentials
@@ -210,7 +224,7 @@ def _station_occupancy_snapshot(
             reachable=True,
         )
 
-        return StationOccupancyResponse(
+        response = StationOccupancyResponse(
             station_id=station.id,
             host=station.host,
             connector_status=str(connector),
@@ -218,8 +232,18 @@ def _station_occupancy_snapshot(
             last_checked_at=observed_at,
             source="live",
         )
+        if db is not None and transition_source is not None:
+            record_station_status_transition(
+                db=db,
+                station=station,
+                new_status=response.computed_status,
+                source=transition_source,
+                reason=transition_reason,
+                created_at=response.last_checked_at,
+            )
+        return response
     except Exception:
-        return StationOccupancyResponse(
+        response = StationOccupancyResponse(
             station_id=station.id,
             host=station.host,
             connector_status=None,
@@ -227,16 +251,38 @@ def _station_occupancy_snapshot(
             last_checked_at=now,
             source="live",
         )
+        if db is not None and transition_source is not None:
+            record_station_status_transition(
+                db=db,
+                station=station,
+                new_status=response.computed_status,
+                source=transition_source,
+                reason=transition_reason,
+                created_at=response.last_checked_at,
+            )
+        return response
 
 
 def _stations_live_occupancy(
     *,
+    db: DbSession | None,
     stations: Sequence[ChargingStation],
     credentials: tuple[str, str] | None,
+    transition_source: str | None = None,
+    transition_reason: str | None = None,
 ) -> list[StationOccupancyResponse]:
     if not stations:
         return []
-    return [_station_occupancy_snapshot(station=s, credentials=credentials) for s in stations]
+    return [
+        _station_occupancy_snapshot(
+            db=db,
+            station=s,
+            credentials=credentials,
+            transition_source=transition_source,
+            transition_reason=transition_reason,
+        )
+        for s in stations
+    ]
 
 
 def _normalize_station_timestamp(value: datetime | None) -> datetime | None:
@@ -247,7 +293,13 @@ def _normalize_station_timestamp(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC)
 
 
-def _station_occupancy_snapshot_agent(*, station: ChargingStation) -> StationOccupancyResponse:
+def _station_occupancy_snapshot_agent(
+    *,
+    db: DbSession | None,
+    station: ChargingStation,
+    transition_source: str | None = None,
+    transition_reason: str | None = None,
+) -> StationOccupancyResponse:
     observed_at = _station_observed_at(station) or datetime.now(tz=UTC)
     raw_connector = getattr(station, "connector_status", None)
     connector = str(raw_connector) if raw_connector is not None else None
@@ -256,7 +308,7 @@ def _station_occupancy_snapshot_agent(*, station: ChargingStation) -> StationOcc
         station_status=station.status,
         reachable=True,
     )
-    return StationOccupancyResponse(
+    response = StationOccupancyResponse(
         station_id=station.id,
         host=station.host,
         connector_status=connector,
@@ -264,9 +316,25 @@ def _station_occupancy_snapshot_agent(*, station: ChargingStation) -> StationOcc
         last_checked_at=observed_at,
         source="agent",
     )
+    if db is not None and transition_source is not None:
+        record_station_status_transition(
+            db=db,
+            station=station,
+            new_status=response.computed_status,
+            source=transition_source,
+            reason=transition_reason,
+            created_at=response.last_checked_at,
+        )
+    return response
 
 
-def _station_occupancy_snapshot_db(*, station: ChargingStation) -> StationOccupancyResponse:
+def _station_occupancy_snapshot_db(
+    *,
+    db: DbSession | None,
+    station: ChargingStation,
+    transition_source: str | None = None,
+    transition_reason: str | None = None,
+) -> StationOccupancyResponse:
     settings = get_settings()
     now = datetime.now(tz=UTC)
     observed_at = _station_observed_at(station)
@@ -274,7 +342,7 @@ def _station_occupancy_snapshot_db(*, station: ChargingStation) -> StationOccupa
     stale_after = max(1, int(settings.agent_stale_after_seconds))
     is_stale = observed_at is None or (now - observed_at) > timedelta(seconds=stale_after)
     if is_stale:
-        return StationOccupancyResponse(
+        response = StationOccupancyResponse(
             station_id=station.id,
             host=station.host,
             connector_status=None,
@@ -282,35 +350,84 @@ def _station_occupancy_snapshot_db(*, station: ChargingStation) -> StationOccupa
             last_checked_at=last_checked_at,
             source="db",
         )
-    return _station_occupancy_snapshot_agent(station=station)
+        if db is not None and transition_source is not None:
+            record_station_status_transition(
+                db=db,
+                station=station,
+                new_status=response.computed_status,
+                source=transition_source,
+                reason=transition_reason,
+                created_at=response.last_checked_at,
+            )
+        return response
+    return _station_occupancy_snapshot_agent(
+        db=db,
+        station=station,
+        transition_source=transition_source,
+        transition_reason=transition_reason,
+    )
 
 
-def _stations_db_occupancy(*, stations: Sequence[ChargingStation]) -> list[StationOccupancyResponse]:
-    return [_station_occupancy_snapshot_db(station=s) for s in stations]
+def _stations_db_occupancy(
+    *,
+    db: DbSession | None,
+    stations: Sequence[ChargingStation],
+    transition_source: str | None = None,
+    transition_reason: str | None = None,
+) -> list[StationOccupancyResponse]:
+    return [
+        _station_occupancy_snapshot_db(
+            db=db,
+            station=s,
+            transition_source=transition_source,
+            transition_reason=transition_reason,
+        )
+        for s in stations
+    ]
 
 
 def _station_occupancy_snapshot_with_fallback(
     *,
+    db: DbSession | None,
     station: ChargingStation,
     credentials: tuple[str, str] | None,
     stale_after_seconds: int,
+    transition_source: str | None = None,
+    transition_reason: str | None = None,
 ) -> StationOccupancyResponse:
     if _status_is_fresh(station=station, stale_after_seconds=stale_after_seconds):
-        return _station_occupancy_snapshot_agent(station=station)
-    return _station_occupancy_snapshot(station=station, credentials=credentials)
+        return _station_occupancy_snapshot_agent(
+            db=db,
+            station=station,
+            transition_source=transition_source,
+            transition_reason=transition_reason,
+        )
+    return _station_occupancy_snapshot(
+        db=db,
+        station=station,
+        credentials=credentials,
+        transition_source=transition_source,
+        transition_reason=transition_reason,
+    )
 
 
 def _stations_hybrid_occupancy(
     *,
+    db: DbSession | None,
     stations: Sequence[ChargingStation],
     credentials: tuple[str, str] | None,
     stale_after_seconds: int,
+    transition_source: str | None = None,
+    transition_reason: str | None = None,
 ) -> list[StationOccupancyResponse]:
     return [
         _station_occupancy_snapshot_with_fallback(
+            db=db,
             station=station,
             credentials=credentials,
             stale_after_seconds=stale_after_seconds,
+            transition_source=transition_source,
+            transition_reason=transition_reason,
         )
         for station in stations
     ]
@@ -390,13 +507,14 @@ def station_occupancy(
     ).all()
     settings = get_settings()
     if settings.normalized_agent_occupancy_source == "db":
-        items = _stations_db_occupancy(stations=stations)
+        items = _stations_db_occupancy(db=None, stations=stations)
     elif settings.normalized_agent_occupancy_source == "live_only":
         credentials = _resolve_legrand_credentials()
-        items = _stations_live_occupancy(stations=stations, credentials=credentials)
+        items = _stations_live_occupancy(db=None, stations=stations, credentials=credentials)
     else:
         credentials = _resolve_legrand_credentials()
         items = _stations_hybrid_occupancy(
+            db=None,
             stations=stations,
             credentials=credentials,
             stale_after_seconds=max(1, int(getattr(settings, "agent_stale_after_seconds", 180) or 180)),
