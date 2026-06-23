@@ -1321,6 +1321,77 @@ def test_status_message_hides_stale_timestamp(monkeypatch) -> None:
     get_settings.cache_clear()
 
 
+def test_status_message_appends_unavailable_reason_when_present(monkeypatch) -> None:
+    import condocharge.api.v1.telegram as telegram_api
+
+    observed_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_AGENT_OCCUPANCY_SOURCE", "db")
+    monkeypatch.setenv("CONDOCHARGE_AGENT_STALE_AFTER_SECONDS", "600")
+
+    class _Item:
+        def __init__(self, station_id: int, host: str) -> None:
+            self.station_id = station_id
+            self.host = host
+            self.computed_status = "unavailable"
+            self.unavailable_reason = "live_poll_timeout"
+            self.last_checked_at = observed_at
+            self.source = "db"
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        resident = _seed_resident(db, condo=condo)
+        _seed_station(db, condo=condo)
+        monkeypatch.setattr(
+            telegram_api,
+            "_stations_db_occupancy",
+            lambda *, db, stations, transition_source=None, transition_reason=None: [
+                _Item(stations[0].id, stations[0].host)
+            ],
+        )
+        message = telegram_api._status_message_for_resident(db=db, resident=resident)
+
+    assert "Garage A: ⚫ Non disponibile" in message
+    assert "Motivo: live_poll_timeout" in message
+    get_settings.cache_clear()
+
+
+def test_status_message_does_not_append_unavailable_reason_when_missing(monkeypatch) -> None:
+    import condocharge.api.v1.telegram as telegram_api
+
+    observed_at = datetime.now(tz=UTC).replace(second=0, microsecond=0)
+    get_settings.cache_clear()
+    monkeypatch.setenv("CONDOCHARGE_AGENT_OCCUPANCY_SOURCE", "db")
+    monkeypatch.setenv("CONDOCHARGE_AGENT_STALE_AFTER_SECONDS", "600")
+
+    class _Item:
+        def __init__(self, station_id: int, host: str) -> None:
+            self.station_id = station_id
+            self.host = host
+            self.computed_status = "unavailable"
+            self.last_checked_at = observed_at
+            self.source = "db"
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo = _seed_condo(db)
+        resident = _seed_resident(db, condo=condo)
+        _seed_station(db, condo=condo)
+        monkeypatch.setattr(
+            telegram_api,
+            "_stations_db_occupancy",
+            lambda *, db, stations, transition_source=None, transition_reason=None: [
+                _Item(stations[0].id, stations[0].host)
+            ],
+        )
+        message = telegram_api._status_message_for_resident(db=db, resident=resident)
+
+    assert "Garage A: ⚫ Non disponibile" in message
+    assert "\nMotivo:" not in message
+    get_settings.cache_clear()
+
+
 def test_telegram_webhook_status_command_sends_status(monkeypatch) -> None:
     sent_texts: list[str] = []
 

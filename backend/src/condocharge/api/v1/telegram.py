@@ -265,6 +265,10 @@ def _status_message_for_resident(*, db: DbSession, resident: AppUser) -> str:
         if item is None:
             continue
         lines.append(f"{station.name or station.host}: {_status_icon(item.computed_status)} {_status_label(item.computed_status)}")
+        reason_raw = getattr(item, "unavailable_reason", None)
+        reason = str(reason_raw).strip() if reason_raw is not None else ""
+        if item.computed_status == "unavailable" and reason:
+            lines.append(f"Motivo: {reason}")
 
     lines.extend(
         [
