@@ -556,8 +556,8 @@ class LegrandGreenUpDriver:
                 "energie",
                 "energia",
                 "energia in wh",
-            ),
                 "energie en wh",
+            ),
             "total_minutes": pick(
                 "total minutes",
                 "minutes total",
