@@ -530,6 +530,8 @@ class LegrandGreenUpDriver:
                 "date début",
                 "date debut",
                 "inizio",
+                "date et heure de d?but de la session",
+                "date et heure de debut de la session",
                 "data inizio",
                 "data e ora sessione d'inizio",
             ),
@@ -539,6 +541,7 @@ class LegrandGreenUpDriver:
                 "date end",
                 "date fin",
                 "fine",
+                "date et heure de fin de la session",
                 "data fine",
                 "data e ora sessione finale",
             ),
@@ -554,6 +557,7 @@ class LegrandGreenUpDriver:
                 "energia",
                 "energia in wh",
             ),
+                "energie en wh",
             "total_minutes": pick(
                 "total minutes",
                 "minutes total",
@@ -561,6 +565,7 @@ class LegrandGreenUpDriver:
                 "durée totale",
                 "duree totale",
                 "total",
+                "temps total en min",
                 "tempo totale in min",
             ),
             "charging_minutes": pick(
@@ -570,6 +575,7 @@ class LegrandGreenUpDriver:
                 "durée charge",
                 "duree charge",
                 "charging",
+                "temps de charge en min",
                 "tempo di ricarica in min",
             ),
             "idle_minutes": pick(
@@ -580,11 +586,20 @@ class LegrandGreenUpDriver:
                 "durée attente",
                 "duree attente",
                 "idle",
+                "temps sans charge en min",
                 "tempo senza ricarica in min",
             ),
-            "plug_type": maybe("plug type", "type prise", "tipo presa", "tipo di spina", "presa", "prise"),
-            "rfid_id": maybe("rfid id", "id rfid", "badge id", "id badge", "id (se si usa rfid)"),
-            "rfid_name": maybe("rfid name", "nom rfid", "nome rfid", "badge name", "nom badge", "nome (se si usa rfid)"),
+            "plug_type": maybe("plug type", "type prise", "type de fiche", "tipo presa", "tipo di spina", "presa", "prise"),
+            "rfid_id": maybe("rfid id", "id rfid", "badge id", "id badge", "id (se si usa rfid)", "id (si rfid activ?)"),
+            "rfid_name": maybe(
+                "rfid name",
+                "nom rfid",
+                "nome rfid",
+                "badge name",
+                "nom badge",
+                "nome (se si usa rfid)",
+                "nom (si rfid activ?)",
+            ),
         }
 
     def _row_to_charging_session(

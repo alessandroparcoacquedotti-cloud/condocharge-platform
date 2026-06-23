@@ -51,6 +51,27 @@ RFID_RIGHT_HTML = (
     "</div>"
 )
 
+ITALIAN_CSV_SAMPLE = (
+    "Data e Ora sessione d’inizio;Tempo totale in min;Tempo senza ricarica in min;"
+    "Tempo di ricarica in min;Energia in Wh;Data e Ora sessione finale;Tipo di spina;"
+    "Id (se si usa RFID);Nome (se si usa RFID)\n"
+    "23/06/2026 08:42;267;144;123;6333,58;23/06/2026 13:09;T2S;8AC7E266;Mario Rossi\n"
+).encode("utf-8-sig")
+
+FRENCH_CSV_SAMPLE = (
+    "Date et heure de début de la session;Temps total en min;Temps sans charge en min;"
+    "Temps de charge en min;Energie en Wh;Date et heure de fin de la session;Type de fiche;"
+    "Id (si RFID activé);nom (si RFID activé)\n"
+    "23/06/2026 08:42;267;144;123;6333,58;23/06/2026 13:09;T2S;8AC7E266;Daniela Battistini E18\n"
+).encode("utf-8-sig")
+
+MIXED_LOCALE_CSV_SAMPLE = (
+    "Date et heure de début de la session;Tempo totale in min;Temps sans charge en min;"
+    "Tempo di ricarica in min;Energie en Wh;Date et heure de fin de la session;Type de fiche;"
+    "Id (si RFID activé);Nome (se si usa RFID)\n"
+    "23/06/2026 08:42;267;144;123;6333,58;23/06/2026 13:09;T2S;8AC7E266;Mixed Header User\n"
+).encode("utf-8-sig")
+
 
 def _make_transport(state: dict[str, Any]) -> httpx.MockTransport:
     def handler(request: httpx.Request) -> httpx.Response:
@@ -163,6 +184,70 @@ def test_charge_session_csv_parsing_and_sync() -> None:
     assert s.start_time == datetime.strptime("09/06/2026 12:00:00", "%d/%m/%Y %H:%M:%S")
 
 
+def test_parse_charge_session_csv_supports_italian_headers() -> None:
+    driver = LegrandGreenUpDriver(base_retry_delay_s=0.0, sleep=lambda _: None)
+
+    sessions = driver.parse_charge_session_csv(ITALIAN_CSV_SAMPLE)
+
+    assert len(sessions) == 1
+    session = sessions[0]
+    assert session.energy_wh == 6334
+    assert session.total_minutes == 267
+    assert session.charging_minutes == 123
+    assert session.idle_minutes == 144
+    assert session.plug_type == "T2S"
+    assert session.rfid_id == "8AC7E266"
+    assert session.rfid_name == "Mario Rossi"
+
+
+def test_parse_charge_session_csv_supports_french_headers() -> None:
+    driver = LegrandGreenUpDriver(base_retry_delay_s=0.0, sleep=lambda _: None)
+
+    sessions = driver.parse_charge_session_csv(FRENCH_CSV_SAMPLE)
+
+    assert len(sessions) == 1
+    session = sessions[0]
+    assert session.energy_wh == 6334
+    assert session.total_minutes == 267
+    assert session.charging_minutes == 123
+    assert session.idle_minutes == 144
+    assert session.plug_type == "T2S"
+    assert session.rfid_id == "8AC7E266"
+    assert session.rfid_name == "Daniela Battistini E18"
+
+
+def test_parse_charge_session_csv_supports_mixed_locale_headers() -> None:
+    driver = LegrandGreenUpDriver(base_retry_delay_s=0.0, sleep=lambda _: None)
+
+    sessions = driver.parse_charge_session_csv(MIXED_LOCALE_CSV_SAMPLE)
+
+    assert len(sessions) == 1
+    session = sessions[0]
+    assert session.energy_wh == 6334
+    assert session.total_minutes == 267
+    assert session.charging_minutes == 123
+    assert session.idle_minutes == 144
+    assert session.plug_type == "T2S"
+    assert session.rfid_id == "8AC7E266"
+    assert session.rfid_name == "Mixed Header User"
+
+
+def test_existing_station_200_csv_sample_remains_valid() -> None:
+    driver = LegrandGreenUpDriver(base_retry_delay_s=0.0, sleep=lambda _: None)
+
+    sessions = driver.parse_charge_session_csv(ITALIAN_CSV_SAMPLE)
+
+    assert len(sessions) == 1
+
+
+def test_existing_station_201_csv_sample_becomes_valid() -> None:
+    driver = LegrandGreenUpDriver(base_retry_delay_s=0.0, sleep=lambda _: None)
+
+    sessions = driver.parse_charge_session_csv(FRENCH_CSV_SAMPLE)
+
+    assert len(sessions) == 1
+
+
 def test_retry_on_transient_timeout() -> None:
     calls: dict[str, int] = {"status_calls": 0, "login_calls": 0}
 
@@ -194,7 +279,6 @@ def test_retry_on_transient_timeout() -> None:
     status = driver.get_station_status("192.168.1.200")
     assert str(status.connector_status) == "available"
     assert calls["status_calls"] == 2
-
 
 
 def test_infer_connector_status_maps_french_completed_charge_to_occupied() -> None:
