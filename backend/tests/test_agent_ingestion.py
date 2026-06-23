@@ -810,6 +810,27 @@ def test_live_occupancy_snapshot_maps_connector_states(
     assert result.source == "live"
 
 
+def test_live_occupancy_snapshot_maps_occupied_connector_to_busy(monkeypatch: pytest.MonkeyPatch) -> None:
+    station = ChargingStation(id=1, condominium_id=1, host="192.168.1.200", vendor="legrand_greenup", name="A")
+    stations_api._live_driver_hosts.clear()
+
+    class _FakeStatus:
+        connector_status = stations_api.ConnectorStatus.OCCUPIED
+
+    monkeypatch.setattr(stations_api._live_driver, "login", lambda host, username, password: None)
+    monkeypatch.setattr(stations_api._live_driver, "get_station_status", lambda host: _FakeStatus())
+
+    result = stations_api._station_occupancy_snapshot(
+        station=station,
+        credentials=("user", "password"),
+    )
+
+    assert result.connector_status == "occupied"
+    assert result.computed_status == "busy"
+    assert result.unavailable_reason is None
+    assert result.source == "live"
+
+
 def test_live_occupancy_snapshot_maps_unreachable_to_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     station = ChargingStation(id=1, condominium_id=1, host="192.168.1.200", vendor="legrand_greenup", name="A")
     stations_api._live_driver_hosts.clear()

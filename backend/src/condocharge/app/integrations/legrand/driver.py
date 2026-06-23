@@ -491,6 +491,8 @@ class LegrandGreenUpDriver:
 
     def _infer_connector_status(self, state_text: str, mode_text: str, html: str) -> ConnectorStatus:
         s = f"{state_text} {mode_text} {html}".lower()
+        if re.search(r"\bcharge termin(?:\u00e9e|ee)\b", s) or re.search(r"\btermin(?:\u00e9e|ee)\b", s):
+            return ConnectorStatus.OCCUPIED
         if any(x in s for x in ["pronto", "ready", "available", "disponible"]):
             return ConnectorStatus.AVAILABLE
         if any(x in s for x in ["in carica", "charging", "en charge", "ricarica"]):

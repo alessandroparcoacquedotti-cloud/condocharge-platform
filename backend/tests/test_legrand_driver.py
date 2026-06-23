@@ -6,6 +6,7 @@ from urllib.parse import parse_qs
 
 import httpx
 
+from condocharge.app.integrations.base.models import ConnectorStatus
 from condocharge.app.integrations.legrand.driver import LegrandGreenUpDriver
 
 LOGIN_PAGE = "<html><body><div class='connexion-box'>login</div></body></html>"
@@ -194,3 +195,27 @@ def test_retry_on_transient_timeout() -> None:
     assert str(status.connector_status) == "available"
     assert calls["status_calls"] == 2
 
+
+
+def test_infer_connector_status_maps_french_completed_charge_to_occupied() -> None:
+    driver = LegrandGreenUpDriver(base_retry_delay_s=0.0, sleep=lambda _: None)
+
+    status = driver._infer_connector_status(
+        "T2S charge terminée",
+        "Charge immédiate",
+        "<html></html>",
+    )
+
+    assert status == ConnectorStatus.OCCUPIED
+
+
+def test_infer_connector_status_maps_accentless_french_completed_charge_to_occupied() -> None:
+    driver = LegrandGreenUpDriver(base_retry_delay_s=0.0, sleep=lambda _: None)
+
+    status = driver._infer_connector_status(
+        "T2S charge terminee",
+        "Charge immediate",
+        "<html></html>",
+    )
+
+    assert status == ConnectorStatus.OCCUPIED
