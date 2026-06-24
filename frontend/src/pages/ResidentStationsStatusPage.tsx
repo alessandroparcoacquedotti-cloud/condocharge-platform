@@ -105,6 +105,7 @@ export default function ResidentStationsStatusPage() {
     return { total: items.length, free, busy, unavailable };
   }, [occupancyById, query.data]);
   const [queueBusy, setQueueBusy] = useState<string | null>(null);
+  const [showFreeStationMessage, setShowFreeStationMessage] = useState(false);
 
   const handleRefresh = () => {
     query.refetch();
@@ -112,7 +113,12 @@ export default function ResidentStationsStatusPage() {
     queueQuery.refetch();
   };
 
-  const handleJoinQueue = async () => {
+  const handleQueueButtonClick = async () => {
+    const hasFreeStation = stats.free > 0;
+    if (hasFreeStation) {
+      setShowFreeStationMessage(true);
+      return;
+    }
     setQueueBusy("join");
     try {
       await endpoints.joinResidentQueue();
@@ -159,6 +165,10 @@ export default function ResidentStationsStatusPage() {
   const selectedStatusLabel = selectedStation
     ? occupancyLabel(selectedDisplayStatus ?? "offline", { checking: selectedChecking })
     : null;
+
+  const hasFreeStation = stats.free > 0;
+  const userInQueue = queueQuery.data?.in_queue ?? false;
+  const queuePosition = queueQuery.data?.position ?? null;
 
   if (stationId) {
     return (
@@ -275,6 +285,23 @@ export default function ResidentStationsStatusPage() {
               {occupancyQuery.loading || query.loading ? "Aggiornamento..." : "Aggiorna stato"}
             </button>
           </div>
+
+          {showFreeStationMessage ? (
+            <div style={{ gridColumn: "span 12", marginBottom: "16px" }}>
+              <Surface>
+                <StatusBadge tone="ok" label="È presente almeno una colonnina libera. Non è necessario prenotare." />
+                <button
+                  className="btn btn--secondary touch-safe"
+                  type="button"
+                  onClick={() => setShowFreeStationMessage(false)}
+                  style={{ marginTop: "8px" }}
+                >
+                  Chiudi
+                </button>
+              </Surface>
+            </div>
+          ) : null}
+
           <div style={{ gridColumn: "span 12" }}>
             <div className="device-tile-grid">
               {query.data.items.map((s) => {
@@ -295,11 +322,6 @@ export default function ResidentStationsStatusPage() {
                   (!usingFreshKnownStatus && (!live || isStale || (waitingForLive && displayStatus === "free")));
                 const statusLabel = occupancyLabel(displayStatus ?? "offline", { checking });
                 const statusTone = badgeToneFromLabel(statusLabel);
-                const isFree = displayStatus === "free";
-                const isBusy = displayStatus === "busy";
-                const queueEnabled = queueQuery.data?.queue_enabled ?? false;
-                const userInQueue = queueQuery.data?.in_queue ?? false;
-                const queuePosition = queueQuery.data?.position ?? null;
 
                 return (
                   <div
@@ -313,28 +335,24 @@ export default function ResidentStationsStatusPage() {
                       {checkedAt ? formatAgeFromNow(checkedAt, now) : "Verifica in corso"}
                     </div>
                     <div style={{ marginTop: "12px", width: "100%" }}>
-                      {isFree ? (
-                        <div style={{ textAlign: "center" }}>
-                          <StatusBadge tone="ok" label="Disponibile" />
-                        </div>
-                      ) : null}
-                      {isBusy && !userInQueue ? (
+                      {!userInQueue ? (
                         <button
                           className="btn btn--primary touch-safe"
                           type="button"
-                          onClick={handleJoinQueue}
+                          onClick={handleQueueButtonClick}
                           disabled={queueBusy !== null}
                           style={{ width: "100%" }}
                         >
-                          {queueBusy === "join" ? "Ingresso..." : "Mettiti in coda"}
+                          {queueBusy === "join" ? "Ingresso..." : "Prenota ricarica"}
                         </button>
-                      ) : null}
-                      {isBusy && userInQueue ? (
+                      ) : (
                         <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px" }}>
-                          <StatusBadge
-                            tone="ok"
-                            label={queuePosition ? `⏳ In coda (posizione ${queuePosition})` : "⏳ In coda"}
-                          />
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" }}>
+                            <StatusBadge tone="ok" label="⏳ In coda" />
+                            {queuePosition ? (
+                              <div style={{ fontSize: "14px", color: "#6b7280" }}>Posizione: {queuePosition}</div>
+                            ) : null}
+                          </div>
                           <button
                             className="btn btn--secondary touch-safe"
                             type="button"
@@ -345,22 +363,12 @@ export default function ResidentStationsStatusPage() {
                             {queueBusy === "leave" ? "Uscita..." : "Esci dalla coda"}
                           </button>
                         </div>
-                      ) : null}
-                      {!isFree && !isBusy ? (
-                        <div style={{ textAlign: "center" }}>
-                          <StatusBadge tone="warn" label="Non disponibile" />
-                        </div>
-                      ) : null}
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
-          <div style={{ gridColumn: "span 12", marginTop: "16px" }}>
-            <p style={{ fontSize: "14px", color: "#6b7280", textAlign: "center" }}>
-              Entra in coda e ricevi una notifica appena una postazione diventa disponibile.
-            </p>
           </div>
           {!query.data.items.length ? (
             <div style={{ gridColumn: "span 12" }}>
