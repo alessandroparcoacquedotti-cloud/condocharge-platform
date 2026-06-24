@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { endpoints } from "../shared/api/endpoints";
 import type { ResidentStationOccupancyListResponse, ResidentStationStatusListResponse } from "../shared/api/types";
@@ -28,16 +29,6 @@ function normalizeStatus(value: string | null | undefined) {
   return null;
 }
 
-function occupancyBadge(computed: string | null | undefined, opts: { checking: boolean }) {
-  const s = (computed ?? "").toLowerCase();
-  if (s === "busy" || s === "charging" || s === "occupied") return { label: "In uso", tone: "is-danger" as const };
-  if (s === "unavailable" || s === "offline" || s === "faulted" || s === "unknown" || s === "unreachable" || s === "degraded") {
-    return { label: "Non disponibile", tone: "is-danger" as const };
-  }
-  if (opts.checking) return { label: "Verifica in corso", tone: "is-warn" as const };
-  return { label: "Libera", tone: "is-ok" as const };
-}
-
 function occupancyLabel(computed: string | null | undefined, opts: { checking: boolean }) {
   const s = (computed ?? "").toLowerCase();
   if (s === "busy" || s === "charging" || s === "occupied") return "In uso";
@@ -46,6 +37,13 @@ function occupancyLabel(computed: string | null | undefined, opts: { checking: b
   }
   if (opts.checking) return "Verifica in corso";
   return "Libera";
+}
+
+function badgeToneFromLabel(label: string) {
+  if (label === "Libera") return "ok" as const;
+  if (label === "In uso" || label === "Non disponibile") return "danger" as const;
+  if (label === "Verifica in corso") return "warn" as const;
+  return "neutral" as const;
 }
 
 function resolveDisplayedStatus(
@@ -78,6 +76,8 @@ function resolveDisplayedCheckedAt(
 }
 
 export default function ResidentStationsStatusPage() {
+  const navigate = useNavigate();
+  const { stationId } = useParams();
   const fetcher = useMemo(() => () => endpoints.residentStationsStatus(), []);
   const query = useQuery<ResidentStationStatusListResponse>(fetcher);
   const occupancyFetcher = useMemo(() => () => endpoints.residentStationsOccupancy(), []);
@@ -101,76 +101,194 @@ export default function ResidentStationsStatusPage() {
     }
     return { total: items.length, free, busy, unavailable };
   }, [occupancyById, query.data]);
+  const selectedStation = useMemo(() => {
+    if (!stationId || !query.data) return null;
+    return query.data.items.find((item) => String(item.id) === stationId) ?? null;
+  }, [query.data, stationId]);
+
+  const selectedLive = selectedStation ? occupancyById.get(selectedStation.id) : undefined;
+  const selectedDisplayStatus = selectedStation
+    ? resolveDisplayedStatus(selectedStation.known_status, selectedStation.status_is_fresh, selectedLive)
+    : null;
+  const selectedCheckedAt = selectedStation ? resolveDisplayedCheckedAt(selectedStation, selectedLive) : null;
+  const selectedAgeMs =
+    selectedCheckedAt != null ? Math.max(0, now.getTime() - new Date(selectedCheckedAt).getTime()) : null;
+  const selectedIsStale = selectedAgeMs != null ? selectedAgeMs > STALE_AFTER_MS : true;
+  const selectedUsingFreshKnownStatus =
+    selectedStation != null &&
+    selectedStation.status_is_fresh &&
+    normalizeStatus(selectedStation.known_status) != null &&
+    normalizeStatus(selectedLive?.computed_status) === "unavailable" &&
+    selectedLive?.source !== "agent";
+  const selectedChecking =
+    selectedStation != null &&
+    (!selectedDisplayStatus ||
+      (!selectedUsingFreshKnownStatus &&
+        (!selectedLive || selectedIsStale || ((occupancyQuery.loading || occupancyQuery.refreshing) && selectedDisplayStatus === "free"))));
+  const selectedStatusLabel = selectedStation
+    ? occupancyLabel(selectedDisplayStatus ?? "offline", { checking: selectedChecking })
+    : null;
+
+  if (stationId) {
+    return (
+      <div>
+        <PageHead
+          title={selectedStation?.name ?? "Dettaglio colonnina"}
+          subtitle="Dettagli, ultima sessione e stato aggiornato"
+          right={
+            <button className="btn btn--secondary touch-safe" type="button" onClick={() => navigate("/resident/stato-colonnine")}>
+              Torna alle colonnine
+            </button>
+          }
+        />
+
+        {query.loading ? <LoadingState label="Caricamento colonnina..." /> : null}
+        {query.error ? <ErrorState title="Impossibile caricare la colonnina" message={query.error} onRetry={query.refetch} /> : null}
+
+        {query.data && !selectedStation ? (
+          <EmptyState title="Colonnina non trovata" message="Questa colonnina non e disponibile per il tuo condominio." />
+        ) : null}
+
+        {selectedStation ? (
+          <div className="grid">
+            <div style={{ gridColumn: "span 12" }}>
+              <Surface
+                title={selectedStation.name ?? `Colonnina #${selectedStation.id}`}
+                subtitle="Panoramica rapida"
+                aside={selectedStatusLabel ? <StatusBadge tone={badgeToneFromLabel(selectedStatusLabel)} label={selectedStatusLabel} /> : null}
+                className="surface--accent"
+              >
+                <div className="detail-grid">
+                  <div className="detail-card kv">
+                    <div className="kv__label">Ultimo aggiornamento</div>
+                    <div className="kv__value">{selectedCheckedAt ? formatAgeFromNow(selectedCheckedAt, now) : "Verifica in corso"}</div>
+                  </div>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Controllo live</div>
+                    <div className="kv__value">{formatDateTime(selectedCheckedAt)}</div>
+                  </div>
+                </div>
+              </Surface>
+            </div>
+
+            <div style={{ gridColumn: "span 12" }}>
+              <Surface title="Ultima sessione" subtitle="Dettagli dell'ultima ricarica registrata">
+                {selectedStation.last_charge ? (
+                  <div className="detail-grid">
+                    <div className="detail-card kv">
+                      <div className="kv__label">Fine sessione</div>
+                      <div className="kv__value">{formatDateTime(selectedStation.last_charge.end_time)}</div>
+                    </div>
+                    <div className="detail-card kv">
+                      <div className="kv__label">Energia</div>
+                      <div className="kv__value">{formatKwhFromWh(selectedStation.last_charge.energy_wh)} kWh</div>
+                    </div>
+                    <div className="detail-card kv">
+                      <div className="kv__label">Durata</div>
+                      <div className="kv__value">{selectedStation.last_charge.total_minutes} min</div>
+                    </div>
+                  </div>
+                ) : (
+                  <EmptyState title="Nessuna sessione registrata" message="Non ci sono ancora dati di ricarica per questa colonnina." />
+                )}
+              </Surface>
+            </div>
+
+            <div style={{ gridColumn: "span 12" }}>
+              <Surface title="Dettagli tecnici" subtitle="Informazioni utili se serve capire lo stato della colonnina">
+                <div className="detail-grid">
+                  <div className="detail-card kv">
+                    <div className="kv__label">Ultima sincronizzazione</div>
+                    <div className="kv__value">{formatDateTime(selectedStation.last_sync_at)}</div>
+                  </div>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Ultimo seen</div>
+                    <div className="kv__value">{formatDateTime(selectedStation.last_seen_at)}</div>
+                  </div>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Ultimo poll</div>
+                    <div className="kv__value">{formatDateTime(selectedStation.last_poll_at)}</div>
+                  </div>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Sorgente stato</div>
+                    <div className="kv__value">{selectedLive?.source ?? selectedStation.status_source ?? "-"}</div>
+                  </div>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Connector status</div>
+                    <div className="kv__value">{selectedStation.connector_status ?? "-"}</div>
+                  </div>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Charging state</div>
+                    <div className="kv__value">{selectedStation.charging_state ?? "-"}</div>
+                  </div>
+                </div>
+              </Surface>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div>
-      <PageHead title="Stato colonnine" subtitle="Disponibilita in tempo reale e ultimo aggiornamento" />
+      <PageHead title="Condo Charge" subtitle="Controlla subito se una colonnina e libera" />
 
       {query.loading ? <LoadingState label="Caricamento colonnine…" /> : null}
       {query.error ? <ErrorState title="Impossibile caricare lo stato colonnine" message={query.error} onRetry={query.refetch} /> : null}
 
       {query.data ? (
         <div className="grid">
-          <div style={{ gridColumn: "span 12", display: "flex", justifyContent: "flex-end" }}>
-            <button className="btn btn--primary touch-safe" type="button" onClick={() => occupancyQuery.refetch()}>
-              Aggiorna
-            </button>
-          </div>
-
-          {query.data.items.map((s) => {
-            const live = occupancyById.get(s.id);
-            const displayStatus = resolveDisplayedStatus(s.known_status, s.status_is_fresh, live);
-            const checkedAt = resolveDisplayedCheckedAt(s, live);
-            const checkedAtMs = checkedAt ? new Date(checkedAt).getTime() : null;
-            const ageMs = checkedAtMs != null && !Number.isNaN(checkedAtMs) ? Math.max(0, now.getTime() - checkedAtMs) : null;
-            const isStale = ageMs != null ? ageMs > STALE_AFTER_MS : true;
-            const waitingForLive = occupancyQuery.loading || occupancyQuery.refreshing;
-            const usingFreshKnownStatus =
-              s.status_is_fresh && normalizeStatus(s.known_status) != null && normalizeStatus(live?.computed_status) === "unavailable" && live?.source !== "agent";
-            const checking = !displayStatus || (!usingFreshKnownStatus && (!live || isStale || (waitingForLive && displayStatus === "free")));
-            const badge = occupancyBadge(displayStatus ?? "offline", { checking });
-            return (
-              <div key={s.id} className="card station-card" style={{ gridColumn: "span 6" }}>
-                <div className="station-card__head">
-                  <div>
-                    <h2 className="station-card__title">{s.name ?? `Colonnina #${s.id}`}</h2>
-                    <div className="station-card__subtitle">Ultimo aggiornamento dati: {formatDateTime(s.last_sync_at)}</div>
-                    <div className="station-card__subtitle">
-                      {checkedAt ? `${formatAgeFromNow(checkedAt, now)} (${formatDateTime(checkedAt)})` : "Verifica in corso"}
-                    </div>
-                  </div>
-                  <StatusBadge
-                    tone={badge.tone === "is-ok" ? "ok" : badge.tone === "is-danger" ? "danger" : badge.tone === "is-warn" ? "warn" : "neutral"}
-                    label={badge.label}
-                  />
-                </div>
-
-                <div className="detail-grid">
-                  <div className="detail-card kv">
-                    <div className="kv__label">Ultima ricarica</div>
-                    <div className="kv__value">{s.last_charge ? formatDateTime(s.last_charge.end_time) : "-"}</div>
-                  </div>
-                  <div className="detail-card kv">
-                    <div className="kv__label">Energia</div>
-                    <div className="kv__value">{s.last_charge ? `${formatKwhFromWh(s.last_charge.energy_wh)} kWh` : "-"}</div>
-                  </div>
-                  <div className="detail-card kv">
-                    <div className="kv__label">Durata</div>
-                    <div className="kv__value">{s.last_charge ? `${s.last_charge.total_minutes} min` : "-"}</div>
-                  </div>
-                  <div className="detail-card kv">
-                    <div className="kv__label">Stato live</div>
-                    <div className="kv__value">{occupancyLabel(displayStatus ?? "offline", { checking })}</div>
-                  </div>
-                </div>
-
-                <div className="row">
-                  <StatusBadge tone="neutral" label={checkedAt ? formatDateTime(checkedAt) : "Verifica in corso"} />
-                  <StatusBadge tone={isStale ? "warn" : "ok"} label={isStale ? "Ultimo aggiornamento non recente" : "Aggiornato"} />
-                </div>
+          <div style={{ gridColumn: "span 12" }}>
+            <Surface
+              title="Colonnine"
+              subtitle="Tocca una tessera per vedere i dettagli"
+              aside={
+                <button className="btn btn--primary touch-safe" type="button" onClick={() => occupancyQuery.refetch()}>
+                  Aggiorna
+                </button>
+              }
+            >
+              <div className="device-tile-grid">
+                {query.data.items.map((s) => {
+                  const live = occupancyById.get(s.id);
+                  const displayStatus = resolveDisplayedStatus(s.known_status, s.status_is_fresh, live);
+                  const checkedAt = resolveDisplayedCheckedAt(s, live);
+                  const checkedAtMs = checkedAt ? new Date(checkedAt).getTime() : null;
+                  const ageMs = checkedAtMs != null && !Number.isNaN(checkedAtMs) ? Math.max(0, now.getTime() - checkedAtMs) : null;
+                  const isStale = ageMs != null ? ageMs > STALE_AFTER_MS : true;
+                  const waitingForLive = occupancyQuery.loading || occupancyQuery.refreshing;
+                  const usingFreshKnownStatus =
+                    s.status_is_fresh &&
+                    normalizeStatus(s.known_status) != null &&
+                    normalizeStatus(live?.computed_status) === "unavailable" &&
+                    live?.source !== "agent";
+                  const checking =
+                    !displayStatus ||
+                    (!usingFreshKnownStatus && (!live || isStale || (waitingForLive && displayStatus === "free")));
+                  const statusLabel = occupancyLabel(displayStatus ?? "offline", { checking });
+                  const statusTone = badgeToneFromLabel(statusLabel);
+                  return (
+                    <button
+                      key={s.id}
+                      className={`device-tile device-tile--${statusTone}`}
+                      type="button"
+                      onClick={() => navigate(`/resident/stato-colonnine/${s.id}`)}
+                    >
+                      <div className="device-tile__icon" aria-hidden="true">
+                        ⚡
+                      </div>
+                      <div className="device-tile__title">{s.name ?? `Colonnina ${s.id}`}</div>
+                      <div className={`device-tile__status device-tile__status--${statusTone}`}>{statusLabel}</div>
+                      <div className="device-tile__meta">
+                        {checkedAt ? formatAgeFromNow(checkedAt, now) : "Verifica in corso"}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            );
-          })}
+            </Surface>
+          </div>
 
           {!query.data.items.length ? (
             <div style={{ gridColumn: "span 12" }}>
@@ -182,7 +300,7 @@ export default function ResidentStationsStatusPage() {
           ) : null}
 
           <div style={{ gridColumn: "span 12" }}>
-            <Surface title="Riepilogo" subtitle="Numero di colonnine per stato (solo dopo la lista)">
+            <Surface title="Riepilogo" subtitle="Disponibilita generale">
               <div className="row">
                 <StatusBadge tone="ok" label={`Libere: ${stats.free}`} />
                 <StatusBadge tone="danger" label={`In uso: ${stats.busy}`} />
