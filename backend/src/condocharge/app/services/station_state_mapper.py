@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from condocharge.schemas.agent import AgentChargingState, AgentConnectorStatus, AgentStationStatusItem
+from condocharge.schemas.agent import (
+    AgentChargingState,
+    AgentConnectorStatus,
+    AgentStationStatusItem,
+)
 
 
 @dataclass(frozen=True)
@@ -32,10 +36,7 @@ def map_agent_station_state(item: AgentStationStatusItem) -> MappedStationState:
     elif connector == AgentConnectorStatus.AVAILABLE:
         status = "available"
     else:
-        if item.charging_state in {AgentChargingState.CHARGING}:
-            status = "charging"
-        else:
-            status = "online"
+        status = "charging" if item.charging_state == AgentChargingState.CHARGING else "online"
 
     return MappedStationState(
         status=status,

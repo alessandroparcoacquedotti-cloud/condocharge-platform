@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, cast
 from urllib import error, request
 
 from condocharge.core.config import Settings
@@ -137,7 +138,7 @@ class TelegramBotService:
             raise TelegramDeliveryError(f"Telegram API request failed: {exc.reason}") from exc
 
         try:
-            payload_out = json.loads(raw)
+            payload_out = cast(dict[str, Any], json.loads(raw))
         except json.JSONDecodeError as exc:
             raise TelegramDeliveryError("Telegram API returned invalid JSON.") from exc
 

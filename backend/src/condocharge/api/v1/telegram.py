@@ -15,11 +15,20 @@ from condocharge.api.v1.stations import (
     _stations_hybrid_occupancy,
     _stations_live_occupancy,
 )
-from condocharge.app.services.resident_telegram_link_service import ResidentTelegramLinkService, TelegramLinkError
 from condocharge.app.services.queue_service import QueueDisabledError, QueueService
-from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramDeliveryError, TelegramSendResult
-from condocharge.app.services.telegram_notification_service import ResidentTelegramNotificationService
-from condocharge.core.config import get_settings
+from condocharge.app.services.resident_telegram_link_service import (
+    ResidentTelegramLinkService,
+    TelegramLinkError,
+)
+from condocharge.app.services.telegram_bot_service import (
+    TelegramBotService,
+    TelegramDeliveryError,
+    TelegramSendResult,
+)
+from condocharge.app.services.telegram_notification_service import (
+    ResidentTelegramNotificationService,
+)
+from condocharge.core.config import Settings, get_settings
 from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
 from condocharge.models.tenancy import AppUser, AppUserRole
 
@@ -189,12 +198,12 @@ def _linked_resident_by_chat(*, db: DbSession, chat_id: str) -> AppUser | None:
     )
 
 
-def _is_recent_timestamp(*, value: datetime | None, settings) -> bool:
+def _is_recent_timestamp(*, value: datetime | None, settings: Settings) -> bool:
     if value is None:
         return False
     if value.tzinfo is None or value.utcoffset() is None:
         value = value.replace(tzinfo=UTC)
-    stale_after_seconds = max(1, int(getattr(settings, "agent_stale_after_seconds", 180) or 180))
+    stale_after_seconds = max(1, int(settings.agent_stale_after_seconds or 180))
     return value.astimezone(UTC) >= datetime.now(tz=UTC) - timedelta(seconds=stale_after_seconds)
 
 

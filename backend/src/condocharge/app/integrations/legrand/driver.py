@@ -145,7 +145,8 @@ def _parse_datetime(value: str) -> datetime | None:
         "%Y-%m-%d",
     ):
         try:
-            return datetime.strptime(v, fmt)
+            parsed = datetime.strptime(v, fmt)
+            return parsed
         except ValueError:
             continue
     return None
@@ -491,7 +492,7 @@ class LegrandGreenUpDriver:
 
     def _infer_connector_status(self, state_text: str, mode_text: str, html: str) -> ConnectorStatus:
         s = f"{state_text} {mode_text} {html}".lower()
-        if re.search(r"\bcharge termin(?:\u00e9e|ee)\b", s) or re.search(r"\btermin(?:\u00e9e|ee)\b", s):
+        if re.search(r"\bcharge termin(?:ée|ee)\b", s) or re.search(r"\btermin(?:ée|ee)\b", s):
             return ConnectorStatus.OCCUPIED
         if any(x in s for x in ["pronto", "ready", "available", "disponible"]):
             return ConnectorStatus.AVAILABLE
@@ -529,9 +530,9 @@ class LegrandGreenUpDriver:
                 "date start",
                 "date début",
                 "date debut",
-                "inizio",
-                "date et heure de d?but de la session",
+                "date et heure de début de la session",
                 "date et heure de debut de la session",
+                "inizio",
                 "data inizio",
                 "data e ora sessione d'inizio",
             ),
@@ -540,8 +541,8 @@ class LegrandGreenUpDriver:
                 "end",
                 "date end",
                 "date fin",
-                "fine",
                 "date et heure de fin de la session",
+                "fine",
                 "data fine",
                 "data e ora sessione finale",
             ),
@@ -564,8 +565,8 @@ class LegrandGreenUpDriver:
                 "minuti totali",
                 "durée totale",
                 "duree totale",
-                "total",
                 "temps total en min",
+                "total",
                 "tempo totale in min",
             ),
             "charging_minutes": pick(
@@ -574,8 +575,8 @@ class LegrandGreenUpDriver:
                 "minuti carica",
                 "durée charge",
                 "duree charge",
-                "charging",
                 "temps de charge en min",
+                "charging",
                 "tempo di ricarica in min",
             ),
             "idle_minutes": pick(
@@ -585,12 +586,12 @@ class LegrandGreenUpDriver:
                 "minutes attente",
                 "durée attente",
                 "duree attente",
-                "idle",
                 "temps sans charge en min",
+                "idle",
                 "tempo senza ricarica in min",
             ),
             "plug_type": maybe("plug type", "type prise", "type de fiche", "tipo presa", "tipo di spina", "presa", "prise"),
-            "rfid_id": maybe("rfid id", "id rfid", "badge id", "id badge", "id (se si usa rfid)", "id (si rfid activ?)"),
+            "rfid_id": maybe("rfid id", "id rfid", "badge id", "id badge", "id (se si usa rfid)", "id (si rfid activé)"),
             "rfid_name": maybe(
                 "rfid name",
                 "nom rfid",
@@ -598,7 +599,7 @@ class LegrandGreenUpDriver:
                 "badge name",
                 "nom badge",
                 "nome (se si usa rfid)",
-                "nom (si rfid activ?)",
+                "nom (si rfid activé)",
             ),
         }
 

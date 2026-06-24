@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Iterator
+from typing import Any, cast
 
 from sqlalchemy import event, inspect, select
 from sqlalchemy.orm import Session
@@ -16,6 +17,19 @@ _BUSY_STATES = {"charging", "occupied", "busy"}
 _UNAVAILABLE_STATES = {"faulted", "unreachable", "degraded", "offline", "unavailable"}
 _KNOWN_HISTORY_SOURCES = {"agent", "live_poll", "admin_poll", "telegram_status"}
 _PENDING_TRANSITIONS_KEY = "station_status_history_pending"
+
+UNAVAILABLE_REASON_STALE_AGENT_SNAPSHOT = "stale_agent_snapshot"
+UNAVAILABLE_REASON_LIVE_POLL_TIMEOUT = "live_poll_timeout"
+UNAVAILABLE_REASON_LIVE_POLL_EXCEPTION = "live_poll_exception"
+UNAVAILABLE_REASON_MISSING_CREDENTIALS = "missing_credentials"
+UNAVAILABLE_REASON_CONNECTOR_UNKNOWN = "connector_unknown"
+_KNOWN_UNAVAILABLE_REASONS = {
+    UNAVAILABLE_REASON_STALE_AGENT_SNAPSHOT,
+    UNAVAILABLE_REASON_LIVE_POLL_TIMEOUT,
+    UNAVAILABLE_REASON_LIVE_POLL_EXCEPTION,
+    UNAVAILABLE_REASON_MISSING_CREDENTIALS,
+    UNAVAILABLE_REASON_CONNECTOR_UNKNOWN,
+}
 
 _transition_source_ctx: ContextVar[str | None] = ContextVar("station_status_history_source", default=None)
 _transition_reason_ctx: ContextVar[str | None] = ContextVar("station_status_history_reason", default=None)
@@ -128,8 +142,26 @@ def _default_reason(source: str) -> str:
     return "station status transition"
 
 
-def _history_insert_statement(*, db: Session, values: dict[str, object]):
-    table = StationStatusHistory.__table__
+def normalize_unavailable_reason(reason: str | None) -> str | None:
+    normalized = _normalize_value(reason)
+    if normalized in _KNOWN_UNAVAILABLE_REASONS:
+        return normalized
+    return None
+
+
+def _transition_reason(
+    *,
+    source: str,
+    new_status: str,
+    explicit_reason: str | None,
+) -> str:
+    if _normalize_history_status(new_status) == "unavailable":
+        return normalize_unavailable_reason(explicit_reason) or UNAVAILABLE_REASON_CONNECTOR_UNKNOWN
+    return (explicit_reason or _default_reason(source)).strip()
+
+
+def _history_insert_statement(*, db: Session, values: dict[str, object]) -> Any:
+    table = cast(Any, StationStatusHistory.__table__)
     dialect_name = db.get_bind().dialect.name
     if dialect_name == "sqlite":
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -212,7 +244,11 @@ def record_station_status_transition(
         baseline=baseline,
         new_status=target_status,
         source=normalized_source,
-        reason=(reason or _default_reason(normalized_source)).strip(),
+        reason=_transition_reason(
+            source=normalized_source,
+            new_status=target_status,
+            explicit_reason=reason,
+        ),
         created_at=timestamp,
     )
     return None
@@ -266,7 +302,11 @@ def _record_station_status_history_before_flush(
             previous_status=baseline.previous_status,
             new_status=new_status,
             source=source,
-            reason=(explicit_reason or _default_reason(source)).strip(),
+            reason=_transition_reason(
+                source=source,
+                new_status=new_status,
+                explicit_reason=explicit_reason,
+            ),
             created_at=datetime.now(tz=UTC),
         )
 

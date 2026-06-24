@@ -21,7 +21,14 @@ from condocharge.app.integrations.base.models import (
     ConnectorStatus,
 )
 from condocharge.app.integrations.legrand.driver import LegrandGreenUpDriver
-from condocharge.app.services.station_status_history_service import record_station_status_transition
+from condocharge.app.services.station_status_history_service import (
+    UNAVAILABLE_REASON_CONNECTOR_UNKNOWN,
+    UNAVAILABLE_REASON_LIVE_POLL_EXCEPTION,
+    UNAVAILABLE_REASON_LIVE_POLL_TIMEOUT,
+    UNAVAILABLE_REASON_MISSING_CREDENTIALS,
+    UNAVAILABLE_REASON_STALE_AGENT_SNAPSHOT,
+    record_station_status_transition,
+)
 from condocharge.core.config import get_settings
 from condocharge.models.charging import ChargingStation
 from condocharge.schemas.api import (
@@ -112,6 +119,44 @@ def _map_occupancy_status(
     return "unavailable"
 
 
+def _occupancy_unavailable_reason(*, computed_status: str, mapped_from_runtime: bool = False) -> str | None:
+    if computed_status != "unavailable":
+        return None
+    if mapped_from_runtime:
+        return UNAVAILABLE_REASON_CONNECTOR_UNKNOWN
+    return None
+
+
+def _history_reason_for_response(
+    *,
+    response: StationOccupancyResponse,
+    transition_reason: str | None,
+) -> str | None:
+    if response.computed_status == "unavailable" and response.unavailable_reason is not None:
+        return response.unavailable_reason
+    return transition_reason
+
+
+def _record_transition_for_response(
+    *,
+    db: DbSession | None,
+    station: ChargingStation,
+    response: StationOccupancyResponse,
+    transition_source: str | None,
+    transition_reason: str | None,
+) -> None:
+    if db is None or transition_source is None:
+        return
+    record_station_status_transition(
+        db=db,
+        station=station,
+        new_status=response.computed_status,
+        source=transition_source,
+        reason=_history_reason_for_response(response=response, transition_reason=transition_reason),
+        created_at=response.last_checked_at,
+    )
+
+
 def _read_windows_generic_credential(target_name: str) -> tuple[str, str] | None:
     if sys.platform != "win32":
         return None
@@ -195,18 +240,17 @@ def _station_occupancy_snapshot(
             host=station.host,
             connector_status=None,
             computed_status="unavailable",
+            unavailable_reason=UNAVAILABLE_REASON_MISSING_CREDENTIALS,
             last_checked_at=now,
             source="live",
         )
-        if db is not None and transition_source is not None:
-            record_station_status_transition(
-                db=db,
-                station=station,
-                new_status=response.computed_status,
-                source=transition_source,
-                reason=transition_reason,
-                created_at=response.last_checked_at,
-            )
+        _record_transition_for_response(
+            db=db,
+            station=station,
+            response=response,
+            transition_source=transition_source,
+            transition_reason=transition_reason,
+        )
         return response
 
     try:
@@ -229,18 +273,35 @@ def _station_occupancy_snapshot(
             host=station.host,
             connector_status=str(connector),
             computed_status=computed,
+            unavailable_reason=_occupancy_unavailable_reason(computed_status=computed, mapped_from_runtime=True),
             last_checked_at=observed_at,
             source="live",
         )
-        if db is not None and transition_source is not None:
-            record_station_status_transition(
-                db=db,
-                station=station,
-                new_status=response.computed_status,
-                source=transition_source,
-                reason=transition_reason,
-                created_at=response.last_checked_at,
-            )
+        _record_transition_for_response(
+            db=db,
+            station=station,
+            response=response,
+            transition_source=transition_source,
+            transition_reason=transition_reason,
+        )
+        return response
+    except httpx.TimeoutException:
+        response = StationOccupancyResponse(
+            station_id=station.id,
+            host=station.host,
+            connector_status=None,
+            computed_status="unavailable",
+            unavailable_reason=UNAVAILABLE_REASON_LIVE_POLL_TIMEOUT,
+            last_checked_at=now,
+            source="live",
+        )
+        _record_transition_for_response(
+            db=db,
+            station=station,
+            response=response,
+            transition_source=transition_source,
+            transition_reason=transition_reason,
+        )
         return response
     except Exception:
         response = StationOccupancyResponse(
@@ -248,18 +309,17 @@ def _station_occupancy_snapshot(
             host=station.host,
             connector_status=None,
             computed_status="unavailable",
+            unavailable_reason=UNAVAILABLE_REASON_LIVE_POLL_EXCEPTION,
             last_checked_at=now,
             source="live",
         )
-        if db is not None and transition_source is not None:
-            record_station_status_transition(
-                db=db,
-                station=station,
-                new_status=response.computed_status,
-                source=transition_source,
-                reason=transition_reason,
-                created_at=response.last_checked_at,
-            )
+        _record_transition_for_response(
+            db=db,
+            station=station,
+            response=response,
+            transition_source=transition_source,
+            transition_reason=transition_reason,
+        )
         return response
 
 
@@ -313,18 +373,17 @@ def _station_occupancy_snapshot_agent(
         host=station.host,
         connector_status=connector,
         computed_status=computed,
+        unavailable_reason=_occupancy_unavailable_reason(computed_status=computed, mapped_from_runtime=True),
         last_checked_at=observed_at,
         source="agent",
     )
-    if db is not None and transition_source is not None:
-        record_station_status_transition(
-            db=db,
-            station=station,
-            new_status=response.computed_status,
-            source=transition_source,
-            reason=transition_reason,
-            created_at=response.last_checked_at,
-        )
+    _record_transition_for_response(
+        db=db,
+        station=station,
+        response=response,
+        transition_source=transition_source,
+        transition_reason=transition_reason,
+    )
     return response
 
 
@@ -347,18 +406,17 @@ def _station_occupancy_snapshot_db(
             host=station.host,
             connector_status=None,
             computed_status="unavailable",
+            unavailable_reason=UNAVAILABLE_REASON_STALE_AGENT_SNAPSHOT,
             last_checked_at=last_checked_at,
             source="db",
         )
-        if db is not None and transition_source is not None:
-            record_station_status_transition(
-                db=db,
-                station=station,
-                new_status=response.computed_status,
-                source=transition_source,
-                reason=transition_reason,
-                created_at=response.last_checked_at,
-            )
+        _record_transition_for_response(
+            db=db,
+            station=station,
+            response=response,
+            transition_source=transition_source,
+            transition_reason=transition_reason,
+        )
         return response
     return _station_occupancy_snapshot_agent(
         db=db,

@@ -8,16 +8,17 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import not_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
+from condocharge.app.services.queue_service import QueueService
 from condocharge.app.services.resident_notification_service import (
     LiveStationAvailabilityFetcher,
-    NON_AVAILABLE_STATION_STATES,
     StationAvailabilitySnapshot,
 )
-from condocharge.app.services.queue_service import QueueService
 from condocharge.app.services.telegram_bot_service import TelegramBotService, TelegramDeliveryError
 from condocharge.core.config import Settings
 from condocharge.models.charging import AgentState, ChargingSession, ChargingStation, RfidUser
+from condocharge.models.queue import ChargingQueueEntry
 from condocharge.models.tenancy import (
     AppUser,
     AppUserRole,
@@ -586,7 +587,7 @@ class ResidentTelegramNotificationService:
         return bool(mapping.get(notification_type, 0))
 
     @staticmethod
-    def _preference_clause(*, notification_type: str):
+    def _preference_clause(*, notification_type: str) -> ColumnElement[bool]:
         mapping = {
             NOTIFICATION_TYPE_STATION_AVAILABLE: ResidentNotificationPreferences.station_available == 1,
             NOTIFICATION_TYPE_STATION_BUSY: ResidentNotificationPreferences.station_busy == 1,
@@ -977,12 +978,12 @@ class TelegramStationAvailabilityNotificationPoller:
 
             expired_entries = queue_service.expire_overdue_reservations(now=observed_at)
             for entry in expired_entries:
-                resident = db.get(AppUser, entry.resident_app_user_id)
-                if resident is None:
+                expired_resident = db.get(AppUser, entry.resident_app_user_id)
+                if expired_resident is None:
                     continue
                 row = service.send_queue_reservation_expired(
                     condominium_id=entry.condominium_id,
-                    resident=resident,
+                    resident=expired_resident,
                     entry_id=entry.id,
                 )
                 if row is not None:
@@ -1113,7 +1114,7 @@ class TelegramStationAvailabilityNotificationPoller:
         self,
         *,
         db: Session,
-        entry,
+        entry: ChargingQueueEntry,
         observed_at: datetime,
     ) -> int | None:
         reserved_at = ResidentTelegramNotificationService._as_utc(entry.reserved_at)

@@ -246,7 +246,7 @@ class QueueService:
         )
         if condominium_id is not None:
             query = query.where(ChargingQueueEntry.condominium_id == condominium_id)
-        rows = self._db.scalars(query).all()
+        rows = list(self._db.scalars(query).all())
         if not rows:
             return []
 

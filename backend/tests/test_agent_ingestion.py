@@ -6,6 +6,7 @@ import os
 import tempfile
 import threading
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select
@@ -554,6 +555,7 @@ def test_db_backed_occupancy_marks_stale_as_offline(monkeypatch: pytest.MonkeyPa
     items = resp.json()["items"]
     assert len(items) == 1
     assert items[0]["computed_status"] == "unavailable"
+    assert items[0]["unavailable_reason"] == history_service.UNAVAILABLE_REASON_STALE_AGENT_SNAPSHOT
     assert items[0]["source"] == "db"
 
 
@@ -646,6 +648,7 @@ def test_stale_agent_status_falls_back_to_live_polling(monkeypatch: pytest.Monke
     assert admin_resp.status_code == 200
     admin_item = admin_resp.json()["items"][0]
     assert admin_item["computed_status"] == "unavailable"
+    assert admin_item["unavailable_reason"] == history_service.UNAVAILABLE_REASON_CONNECTOR_UNKNOWN
     assert admin_item["source"] == "live"
 
     resident_resp = client.get("/api/v1/resident/stations/occupancy", headers=resident_headers)
@@ -768,6 +771,10 @@ def test_db_backed_occupancy_maps_all_hardened_states(
     admin_resp = client.get("/api/v1/stations/occupancy", headers=admin_headers)
     assert admin_resp.status_code == 200
     assert admin_resp.json()["items"][0]["computed_status"] == expected
+    if expected == "unavailable":
+        assert admin_resp.json()["items"][0]["unavailable_reason"] == history_service.UNAVAILABLE_REASON_CONNECTOR_UNKNOWN
+    else:
+        assert admin_resp.json()["items"][0]["unavailable_reason"] is None
     assert admin_resp.json()["items"][0]["source"] == "agent"
 
     resident_resp = client.get("/api/v1/resident/stations/occupancy", headers=resident_headers)
@@ -807,6 +814,10 @@ def test_live_occupancy_snapshot_maps_connector_states(
     )
 
     assert result.computed_status == expected
+    if expected == "unavailable":
+        assert result.unavailable_reason == history_service.UNAVAILABLE_REASON_CONNECTOR_UNKNOWN
+    else:
+        assert result.unavailable_reason is None
     assert result.source == "live"
 
 
@@ -831,7 +842,41 @@ def test_live_occupancy_snapshot_maps_occupied_connector_to_busy(monkeypatch: py
     assert result.source == "live"
 
 
-def test_live_occupancy_snapshot_maps_unreachable_to_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_live_occupancy_snapshot_missing_credentials_sets_unavailable_reason() -> None:
+    station = ChargingStation(id=1, condominium_id=1, host="192.168.1.200", vendor="legrand_greenup", name="A")
+
+    result = stations_api._station_occupancy_snapshot(
+        station=station,
+        credentials=None,
+    )
+
+    assert result.computed_status == "unavailable"
+    assert result.unavailable_reason == history_service.UNAVAILABLE_REASON_MISSING_CREDENTIALS
+    assert result.source == "live"
+
+
+def test_live_occupancy_snapshot_maps_timeout_to_unavailable_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    station = ChargingStation(id=1, condominium_id=1, host="192.168.1.200", vendor="legrand_greenup", name="A")
+    stations_api._live_driver_hosts.clear()
+
+    monkeypatch.setattr(stations_api._live_driver, "login", lambda host, username, password: None)
+
+    def _raise_timeout(host: str) -> object:
+        raise httpx.ReadTimeout("timed out")
+
+    monkeypatch.setattr(stations_api._live_driver, "get_station_status", _raise_timeout)
+
+    result = stations_api._station_occupancy_snapshot(
+        station=station,
+        credentials=("user", "password"),
+    )
+
+    assert result.computed_status == "unavailable"
+    assert result.unavailable_reason == history_service.UNAVAILABLE_REASON_LIVE_POLL_TIMEOUT
+    assert result.source == "live"
+
+
+def test_live_occupancy_snapshot_maps_exception_to_unavailable_reason(monkeypatch: pytest.MonkeyPatch) -> None:
     station = ChargingStation(id=1, condominium_id=1, host="192.168.1.200", vendor="legrand_greenup", name="A")
     stations_api._live_driver_hosts.clear()
 
@@ -848,4 +893,5 @@ def test_live_occupancy_snapshot_maps_unreachable_to_unavailable(monkeypatch: py
     )
 
     assert result.computed_status == "unavailable"
+    assert result.unavailable_reason == history_service.UNAVAILABLE_REASON_LIVE_POLL_EXCEPTION
     assert result.source == "live"

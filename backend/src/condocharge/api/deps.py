@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Annotated
-
 import secrets
 from dataclasses import dataclass
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer

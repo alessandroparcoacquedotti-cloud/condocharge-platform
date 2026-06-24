@@ -35,9 +35,8 @@ def materialize_sqlite_snapshot(source_db_path: Path, snapshot_db_path: Path) ->
     if snapshot_db_path.exists():
         snapshot_db_path.unlink()
 
-    with sqlite3.connect(str(source_db_path)) as source_conn:
-        with sqlite3.connect(str(snapshot_db_path)) as snapshot_conn:
-            source_conn.backup(snapshot_conn)
+    with sqlite3.connect(str(source_db_path)) as source_conn, sqlite3.connect(str(snapshot_db_path)) as snapshot_conn:
+        source_conn.backup(snapshot_conn)
 
     return snapshot_db_path
 

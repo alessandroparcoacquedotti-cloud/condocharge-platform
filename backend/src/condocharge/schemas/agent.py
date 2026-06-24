@@ -38,10 +38,16 @@ class AgentHeartbeatRequest(BaseModel):
     started_at: datetime
     sent_at: datetime
     station_hosts: list[str] = Field(min_length=1)
+    heartbeat_interval_seconds: int = Field(ge=5)
     status_poll_interval_seconds: int = Field(ge=5)
     session_sync_interval_seconds: int = Field(ge=60)
     last_status_push_at: datetime | None = None
     last_session_import_at: datetime | None = None
+    heartbeat_count: int = Field(ge=0, default=0)
+    polling_count: int = Field(ge=0, default=0)
+    import_count: int = Field(ge=0, default=0)
+    retry_count: int = Field(ge=0, default=0)
+    failure_count: int = Field(ge=0, default=0)
 
     _started_at_aware = field_validator("started_at")(_require_aware_utc)
     _sent_at_aware = field_validator("sent_at")(_require_aware_utc)
@@ -160,4 +166,3 @@ class AgentSessionsImportResponse(BaseModel):
     duplicates_ignored: int
     hosts_processed: int
     errors: list[str] = Field(default_factory=list)
-

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 
 from condocharge.api.deps import AgentPrincipal
 from condocharge.app.services.station_state_mapper import map_agent_station_state
-from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
+from condocharge.models.charging import AgentState, ChargingSession, ChargingStation, RfidUser
 from condocharge.models.tenancy import AppUser
 from condocharge.schemas.agent import (
+    AgentHeartbeatRequest,
     AgentSessionRow,
     AgentSessionsImportRequest,
     AgentStationStatusBatchRequest,
@@ -25,8 +26,8 @@ from condocharge.schemas.agent import (
 class StatusIngestionResult:
     updated: int = 0
     rejected: int = 0
-    items: list[tuple[str, str, datetime]] | None = None
-    errors: list[str] | None = None
+    items: list[tuple[str, str, datetime]] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -35,18 +36,28 @@ class SessionsIngestionResult:
     sessions_updated: int = 0
     duplicates_ignored: int = 0
     hosts_processed: int = 0
-    errors: list[str] | None = None
+    errors: list[str] = field(default_factory=list)
 
 
 class AgentIngestionService:
     def __init__(self, *, db: Session) -> None:
         self._db = db
 
-    def record_heartbeat(self, *, agent: AgentPrincipal) -> None:
-        del agent
+    def record_heartbeat(self, *, agent: AgentPrincipal, body: AgentHeartbeatRequest) -> None:
+        state = self._get_or_create_agent_state(agent=agent)
+        now = datetime.now(tz=UTC)
+        state.hostname = body.hostname.strip()
+        state.agent_version = body.agent_version.strip()
+        state.last_heartbeat_at = now
+        state.heartbeat_count = int(body.heartbeat_count)
+        state.polling_count = int(body.polling_count)
+        state.import_count = int(body.import_count)
+        state.retry_count = int(body.retry_count)
+        state.failure_count = int(body.failure_count)
+        self._db.commit()
 
     def ingest_status_batch(self, *, agent: AgentPrincipal, body: AgentStationStatusBatchRequest) -> StatusIngestionResult:
-        result = StatusIngestionResult(updated=0, rejected=0, items=[], errors=[])
+        result = StatusIngestionResult(updated=0, rejected=0)
         hosts = [s.host.strip() for s in body.stations]
         stations = self._db.scalars(
             select(ChargingStation)
@@ -76,11 +87,13 @@ class AgentIngestionService:
             result.updated += 1
             result.items.append((station.host, station.status, station.last_poll_at))
 
+        state = self._get_or_create_agent_state(agent=agent)
+        state.last_station_update_at = datetime.now(tz=UTC)
         self._db.commit()
         return result
 
     def ingest_sessions_import(self, *, agent: AgentPrincipal, body: AgentSessionsImportRequest) -> SessionsIngestionResult:
-        result = SessionsIngestionResult(errors=[])
+        result = SessionsIngestionResult()
         for host_item in body.hosts:
             host = host_item.host.strip()
             station = self._db.scalar(
@@ -106,9 +119,29 @@ class AgentIngestionService:
 
             station.last_sync_at = datetime.now(tz=UTC)
             station.status_source = station.status_source or "agent"
-            self._db.commit()
+
+        state = self._get_or_create_agent_state(agent=agent)
+        state.last_session_import_at = datetime.now(tz=UTC)
+        self._db.commit()
 
         return result
+
+    def _get_or_create_agent_state(self, *, agent: AgentPrincipal) -> AgentState:
+        state = self._db.scalar(
+            select(AgentState)
+            .where(AgentState.condominium_id == agent.condominium_id)
+            .where(AgentState.agent_id == agent.agent_id)
+        )
+        if state is not None:
+            return state
+
+        state = AgentState(
+            condominium_id=agent.condominium_id,
+            agent_id=agent.agent_id,
+        )
+        self._db.add(state)
+        self._db.flush()
+        return state
 
     def _upsert_session(
         self,

@@ -55,6 +55,7 @@ import type {
 } from "./types";
 
 const api = createApiClient();
+const dashboardApi = createApiClient({ timeoutMs: 30000 });
 
 export type ListParams = {
   limit?: number;
@@ -97,10 +98,10 @@ export const endpoints = {
     if (params.from_date) search.set("from_date", params.from_date);
     if (params.to_date) search.set("to_date", params.to_date);
     const qs = search.toString();
-    return api.getJson<DashboardSummaryResponse>(`/api/v1/dashboard/summary${qs ? `?${qs}` : ""}`);
+    return dashboardApi.getJson<DashboardSummaryResponse>(`/api/v1/dashboard/summary${qs ? `?${qs}` : ""}`);
   },
   dashboardAgentStatus() {
-    return api.getJson<AgentStatusResponse>("/api/v1/dashboard/agent-status");
+    return dashboardApi.getJson<AgentStatusResponse>("/api/v1/dashboard/agent-status");
   },
   stations(params: ListParams = {}) {
     const search = new URLSearchParams();

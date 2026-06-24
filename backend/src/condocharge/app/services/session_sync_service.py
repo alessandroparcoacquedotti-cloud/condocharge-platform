@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -15,6 +16,9 @@ from condocharge.app.integrations.legrand.driver import (
     LegrandGreenUpDriver,
 )
 from condocharge.app.services.resident_notification_service import ResidentNotificationService
+from condocharge.app.services.telegram_notification_service import (
+    ResidentTelegramNotificationService,
+)
 from condocharge.core.config import Settings, get_settings
 from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
 from condocharge.models.tenancy import AppUser
@@ -37,11 +41,16 @@ class SessionSyncService:
         driver: LegrandGreenUpDriver,
         settings: Settings | None = None,
         notification_service: ResidentNotificationService | None = None,
+        telegram_notification_service: ResidentTelegramNotificationService | None = None,
     ) -> None:
         self._db = db
         self._driver = driver
         self._settings = settings or get_settings()
         self._notification_service = notification_service or ResidentNotificationService(
+            db=db,
+            settings=self._settings,
+        )
+        self._telegram_notification_service = telegram_notification_service or ResidentTelegramNotificationService(
             db=db,
             settings=self._settings,
         )
@@ -255,6 +264,11 @@ class SessionSyncService:
                     resident=resident,
                     station=station,
                 )
+                self._telegram_notification_service.send_charging_completed(
+                    session=row,
+                    resident=resident,
+                    station=station,
+                )
             except Exception as exc:
                 self._db.rollback()
                 result.errors.append(
@@ -305,7 +319,9 @@ class SessionSyncService:
         return changed
 
     def _normalize_dt(self, value: datetime) -> datetime:
-        return value
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=ZoneInfo("Europe/Rome"))
+        return value.astimezone(UTC)
 
     def _source_key(self, *, host: str, session: LegrandChargingSession) -> str:
         payload = "|".join(

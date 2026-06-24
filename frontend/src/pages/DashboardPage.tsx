@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 
 import { endpoints } from "../shared/api/endpoints";
 import { useQuery } from "../shared/hooks/useQuery";
+import { AgentStatusCard } from "../shared/ui/AgentStatusCard";
 import {
   DateRange,
   DateRangeControls,
@@ -73,6 +74,8 @@ export default function DashboardPage() {
             <div className="card-title">Colonnine attive</div>
             <div className="metric">{summaryQuery.data.total_stations}</div>
           </div>
+
+          <AgentStatusCard status={summaryQuery.data.agent_status} />
 
           <div className="card" style={{ gridColumn: "span 5" }}>
             <div className="card-title">Ultima ricarica</div>

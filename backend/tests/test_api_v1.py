@@ -273,6 +273,7 @@ def test_station_history_endpoint_supports_filters() -> None:
     assert payload["items"][0]["station_id"] == ids["station1_id"]
     assert payload["items"][0]["new_status"] == "busy"
     assert payload["items"][0]["source"] == "agent"
+    assert payload["items"][0]["reason"] == "agent station update"
 
 
 def test_stations_occupancy_endpoint_does_not_write_history(monkeypatch) -> None:
@@ -330,3 +331,5 @@ def test_openapi_includes_v1_routes() -> None:
     assert "/api/v1/users" in paths
     assert "/api/v1/dashboard/summary" in paths
     assert "/api/v1/admin/station-history" in paths
+    station_occupancy_properties = response.json()["components"]["schemas"]["StationOccupancyResponse"]["properties"]
+    assert "unavailable_reason" in station_occupancy_properties

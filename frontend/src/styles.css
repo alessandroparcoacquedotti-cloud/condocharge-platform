@@ -197,6 +197,32 @@ body {
   background: rgba(255, 90, 122, 0.07);
 }
 
+.pill.is-warn {
+  color: #ffd166;
+  border-color: rgba(255, 209, 102, 0.28);
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.04);
+}
+
+.status-dot.is-green {
+  background: var(--ok);
+}
+
+.status-dot.is-yellow {
+  background: #ffd166;
+}
+
+.status-dot.is-red {
+  background: var(--danger);
+}
+
 .table-wrap {
   overflow-x: auto;
   border-radius: 12px;

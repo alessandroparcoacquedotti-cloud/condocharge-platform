@@ -10,6 +10,21 @@ DEFAULT_PRODUCTION_CORS_ORIGINS = (
     "https://shimmering-quietude-production.up.railway.app",
 )
 DEFAULT_DEV_DATABASE_URL = "sqlite+pysqlite:///./condocharge_dev.sqlite3"
+_KNOWN_WEAK_JWT_SECRETS = {
+    "",
+    "change-me",
+    "changeme",
+    "default",
+    "secret",
+    "jwt",
+    "jwt-secret",
+    "jwtsecret",
+    "token",
+    "password",
+    "condocharge",
+    "condocharge-secret",
+    "condocharge-jwt-secret",
+}
 
 
 class Settings(BaseSettings):
@@ -155,22 +170,13 @@ class Settings(BaseSettings):
                     )
 
         secret = self.jwt_secret_key.strip()
-        if self.requires_production_deployment_guards and (
-            not secret or secret in {"change-me", "changeme", "default", "secret"}
-        ):
-            raise RuntimeError(
-                "Unsafe CONDOCHARGE_JWT_SECRET_KEY for production deployment. "
-                "Set a strong non-default secret before startup."
-            )
+        if self.requires_production_deployment_guards:
+            _validate_jwt_secret(secret)
 
         if not self.requires_secure_runtime:
             return
 
-        if not secret or secret in {"change-me", "changeme", "default", "secret"}:
-            raise RuntimeError(
-                "Unsafe CONDOCHARGE_JWT_SECRET_KEY for pilot/production. "
-                "Set a strong non-default secret before startup."
-            )
+        _validate_jwt_secret(secret)
 
         cors_values = self.effective_cors_origin_strings
         if "*" in cors_values:
@@ -187,3 +193,37 @@ _LAN_PUBLIC_URL_RE = re.compile(r"^http://192\.168\.\d{1,3}\.\d{1,3}(?::\d+)?(?:
 
 def _is_allowed_lan_public_url(public_url: str) -> bool:
     return bool(_LAN_PUBLIC_URL_RE.match(public_url.strip()))
+
+
+def _validate_jwt_secret(secret: str) -> None:
+    normalized = secret.strip()
+    lowered = normalized.lower()
+
+    if not normalized:
+        raise RuntimeError(
+            "Unsafe CONDOCHARGE_JWT_SECRET_KEY for pilot/production. Secret cannot be empty and must be at least 32 bytes."
+        )
+
+    if lowered in _KNOWN_WEAK_JWT_SECRETS:
+        raise RuntimeError(
+            "Unsafe CONDOCHARGE_JWT_SECRET_KEY for pilot/production. Rejecting default or obvious secrets."
+        )
+
+    if len(normalized.encode("utf-8")) < 32:
+        raise RuntimeError(
+            "Unsafe CONDOCHARGE_JWT_SECRET_KEY for pilot/production. Secret must be at least 32 bytes."
+        )
+
+    if _looks_like_obvious_secret(lowered):
+        raise RuntimeError(
+            "Unsafe CONDOCHARGE_JWT_SECRET_KEY for pilot/production. Rejecting obvious low-entropy secrets."
+        )
+
+
+def _looks_like_obvious_secret(lowered_secret: str) -> bool:
+    if re.fullmatch(r"(.)\1{7,}", lowered_secret):
+        return True
+    return re.fullmatch(
+        r"(?:1234|abcd|password|secret|token|jwt|condocharge|qwer|asdf|zxcv)[-_0-9a-z]*",
+        lowered_secret,
+    ) is not None

@@ -23,11 +23,19 @@ from condocharge.app.services.resident_invitation_service import (
     ResidentInvitationService,
 )
 from condocharge.app.services.session_sync_service import SessionSyncService
-from condocharge.app.services.station_status_history_service import station_status_transition_context
+from condocharge.app.services.station_status_history_service import (
+    station_status_transition_context,
+)
 from condocharge.core.config import get_settings
 from condocharge.core.security import hash_password
-from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser, StationStatusHistory
+from condocharge.models.charging import (
+    ChargingSession,
+    ChargingStation,
+    RfidUser,
+    StationStatusHistory,
+)
 from condocharge.models.tenancy import AppUser, AppUserRole, ResidentInvitationToken
+from condocharge.schemas.api import StationStatusHistoryListResponse, StationStatusHistoryResponse
 from condocharge.schemas.auth import (
     AppUserResponse,
     CondominiumResponse,
@@ -35,7 +43,6 @@ from condocharge.schemas.auth import (
     SyncSessionsRequest,
     SyncSessionsResponse,
 )
-from condocharge.schemas.api import StationStatusHistoryListResponse, StationStatusHistoryResponse
 from condocharge.schemas.consumption import (
     AdminCostReportResponse,
     AdminResidentRow,

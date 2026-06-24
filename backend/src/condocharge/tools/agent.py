@@ -7,11 +7,12 @@ import os
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -169,7 +170,7 @@ def _optional_float(name: str, default: float) -> float:
 
 
 def _default_log_dir() -> Path:
-    program_data = (os.environ.get("ProgramData") or "").strip()
+    program_data = (os.environ.get("PROGRAMDATA") or "").strip()
     if program_data:
         return Path(program_data) / "CondoCharge" / "Agent" / "logs"
     return Path.cwd() / "logs"
@@ -356,16 +357,15 @@ def _post_json_with_retries(
     for attempt in range(len(delays) + 1):
         try:
             resp = client.post(url, headers=headers, json=payload)
-            if resp.status_code >= 500 or resp.status_code == 429:
-                if attempt < len(delays):
-                    logger.warning(
-                        "railway_request_retry",
-                        extra={"event": "railway_request_retry", "url": url, "status_code": resp.status_code, "attempt": attempt + 1},
-                    )
-                    if metrics is not None:
-                        metrics.retry_count += 1
-                    sleep(delays[attempt])
-                    continue
+            if (resp.status_code >= 500 or resp.status_code == 429) and attempt < len(delays):
+                logger.warning(
+                    "railway_request_retry",
+                    extra={"event": "railway_request_retry", "url": url, "status_code": resp.status_code, "attempt": attempt + 1},
+                )
+                if metrics is not None:
+                    metrics.retry_count += 1
+                sleep(delays[attempt])
+                continue
             resp.raise_for_status()
             return resp
         except httpx.HTTPStatusError as exc:
@@ -560,7 +560,7 @@ def push_status_once(
     for host in cfg.hosts:
         observed_at = _utc_now()
         try:
-            def fetch() -> tuple[Any, Any]:
+            def fetch(host: str = host) -> tuple[Any, Any]:
                 driver.login(host, cfg.legrand_username, cfg.legrand_password)
                 return driver.get_station_status(host), driver.get_rfid_status(host)
 
@@ -650,7 +650,7 @@ def import_sessions_once(
     sessions_sent = 0
     for host in cfg.hosts:
         try:
-            def fetch_sessions() -> list[Any]:
+            def fetch_sessions(host: str = host) -> list[Any]:
                 driver.login(host, cfg.legrand_username, cfg.legrand_password)
                 return driver.sync_charge_sessions(host)
 

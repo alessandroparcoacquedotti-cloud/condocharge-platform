@@ -13,15 +13,15 @@ from condocharge.api.v1._helpers import (
     paginate,
     session_detail_query,
 )
-from condocharge.app.services.resident_telegram_link_service import ResidentTelegramLinkService
-from condocharge.app.services.telegram_bot_service import TelegramBotService
 from condocharge.api.v1.stations import (
     _resolve_legrand_credentials,
-    _status_is_fresh,
     _stations_db_occupancy,
     _stations_hybrid_occupancy,
     _stations_live_occupancy,
+    _status_is_fresh,
 )
+from condocharge.app.services.resident_telegram_link_service import ResidentTelegramLinkService
+from condocharge.app.services.telegram_bot_service import TelegramBotService
 from condocharge.core.config import get_settings
 from condocharge.models.charging import ChargingSession, ChargingStation, RfidUser
 from condocharge.models.tenancy import Condominium, ResidentNotificationPreferences

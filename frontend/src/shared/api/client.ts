@@ -34,9 +34,25 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
   function withTimeout(init: RequestInit = {}) {
     const controller = new AbortController();
+    let detachExternalAbort = () => {};
+    if (init.signal) {
+      const externalSignal = init.signal as AbortSignal;
+      if (externalSignal.aborted) {
+        controller.abort();
+      } else {
+        const onAbort = () => controller.abort();
+        externalSignal.addEventListener("abort", onAbort);
+        detachExternalAbort = () => externalSignal.removeEventListener("abort", onAbort);
+      }
+    }
     const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-    const signal = init.signal ? (init.signal as AbortSignal) : controller.signal;
-    return { init: { ...init, signal }, cleanup: () => window.clearTimeout(timer) };
+    return {
+      init: { ...init, signal: controller.signal },
+      cleanup: () => {
+        window.clearTimeout(timer);
+        detachExternalAbort();
+      },
+    };
   }
 
   return {
@@ -56,6 +72,14 @@ export function createApiClient(options: ApiClientOptions = {}) {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
         });
+      } catch (error) {
+        console.error("FETCH_FAILURE", {
+          raw: error,
+          name: error instanceof Error ? error.name : undefined,
+          message: error instanceof Error ? error.message : String(error),
+          onLine: navigator.onLine,
+        });
+        throw error;
       } finally {
         wrapped.cleanup();
       }

@@ -11,8 +11,8 @@ from condocharge.schemas.agent import (
     AgentHeartbeatResponse,
     AgentSessionsImportRequest,
     AgentSessionsImportResponse,
-    AgentStationStatusBatchRequest,
     AgentStationStatusAck,
+    AgentStationStatusBatchRequest,
     AgentStationStatusBatchResponse,
 )
 
@@ -20,8 +20,9 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 
 @router.post("/heartbeat", response_model=AgentHeartbeatResponse, summary="Agent heartbeat")
-def heartbeat(current_agent: CurrentAgent, body: AgentHeartbeatRequest) -> AgentHeartbeatResponse:
-    del body
+def heartbeat(db: DbSession, current_agent: CurrentAgent, body: AgentHeartbeatRequest) -> AgentHeartbeatResponse:
+    service = AgentIngestionService(db=db)
+    service.record_heartbeat(agent=current_agent, body=body)
     now = datetime.now(tz=UTC)
     return AgentHeartbeatResponse(
         agent_id=current_agent.agent_id,

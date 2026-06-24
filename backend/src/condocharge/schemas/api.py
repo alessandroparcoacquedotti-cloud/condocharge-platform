@@ -108,6 +108,7 @@ class StationOccupancyResponse(BaseModel):
     host: str
     connector_status: str | None = None
     computed_status: str
+    unavailable_reason: str | None = None
     last_checked_at: datetime
     source: str
 
