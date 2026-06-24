@@ -262,13 +262,8 @@ export default function ResidentStationsStatusPage() {
                 return (
                   <div
                     key={s.id}
-                    className={`device-tile device-tile--${statusTone}`}
+                    className={`device-tile device-tile--${statusTone}`}       
                   >
-                    <div className="device-tile__icon" aria-hidden="true">
-                      <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M13 1L4 13H9V21H15V13H20L13 1Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </div>
                     <div className="device-tile__title">{s.name ?? `Colonnina ${s.id}`}</div>
                     <div className={`device-tile__status device-tile__status--${statusTone}`}>{statusLabel}</div>
                     <div className="device-tile__meta">

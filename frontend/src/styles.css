@@ -562,33 +562,26 @@ textarea {
 .device-tile {
   appearance: none;
   width: 100%;
-  min-height: 220px;
-  border-radius: 24px;
-  padding: 24px 20px;
+  min-height: 180px;
+  border-radius: 20px;
+  padding: 28px 20px;
   display: grid;
   place-items: center;
-  gap: 12px;
+  gap: 16px;
   text-align: center;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-}
-
-.device-tile__icon {
-  width: 80px;
-  height: 80px;
-  display: grid;
-  place-items: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
 }
 
 .device-tile__title {
   color: var(--text-strong);
-  font-size: 1.1rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .device-tile__status {
-  font-size: 1.5rem;
-  line-height: 1.2;
+  font-size: 1.8rem;
+  line-height: 1.1;
   font-weight: 800;
   letter-spacing: -0.03em;
 }
@@ -611,7 +604,7 @@ textarea {
 
 .device-tile__meta {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 
 .device-tile--ok {
@@ -619,17 +612,9 @@ textarea {
   background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%);
 }
 
-.device-tile--ok .device-tile__icon {
-  color: #16a34a;
-}
-
 .device-tile--danger {
   border: 2px solid #fecaca;
   background: linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%);
-}
-
-.device-tile--danger .device-tile__icon {
-  color: #dc2626;
 }
 
 .device-tile--warn {
@@ -637,17 +622,9 @@ textarea {
   background: linear-gradient(180deg, #fefce8 0%, #fef9c3 100%);
 }
 
-.device-tile--warn .device-tile__icon {
-  color: #ca8a04;
-}
-
 .device-tile--neutral {
   border: 2px solid #e5e7eb;
   background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
-}
-
-.device-tile--neutral .device-tile__icon {
-  color: #6b7280;
 }
 
 .station-card__head {
