@@ -1,8 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { endpoints } from "../shared/api/endpoints";
-import type { ResidentStationOccupancyListResponse, ResidentStationStatusListResponse } from "../shared/api/types";
+import type { ResidentStationOccupancyListResponse, ResidentStationStatusListResponse, ResidentQueueStatusResponse } from "../shared/api/types";
 import { useQuery } from "../shared/hooks/useQuery";
 import {
   EmptyState,
@@ -83,6 +83,8 @@ export default function ResidentStationsStatusPage() {
   const query = useQuery<ResidentStationStatusListResponse>(fetcher);
   const occupancyFetcher = useMemo(() => () => endpoints.residentStationsOccupancy(), []);
   const occupancyQuery = useQuery<ResidentStationOccupancyListResponse>(occupancyFetcher, { refetchIntervalMs: REFRESH_MS });
+  const queueFetcher = useMemo(() => () => endpoints.residentQueueStatus(), []);
+  const queueQuery = useQuery<ResidentQueueStatusResponse>(queueFetcher);
   const occupancyById = useMemo(() => {
     const items = occupancyQuery.data?.items ?? [];
     return new Map(items.map((x) => [x.station_id, x]));
@@ -102,6 +104,34 @@ export default function ResidentStationsStatusPage() {
     }
     return { total: items.length, free, busy, unavailable };
   }, [occupancyById, query.data]);
+  const [queueBusy, setQueueBusy] = useState<string | null>(null);
+
+  const handleRefresh = () => {
+    query.refetch();
+    occupancyQuery.refetch();
+    queueQuery.refetch();
+  };
+
+  const handleJoinQueue = async () => {
+    setQueueBusy("join");
+    try {
+      await endpoints.joinResidentQueue();
+      queueQuery.refetch();
+    } finally {
+      setQueueBusy(null);
+    }
+  };
+
+  const handleLeaveQueue = async () => {
+    setQueueBusy("leave");
+    try {
+      await endpoints.leaveResidentQueue();
+      queueQuery.refetch();
+    } finally {
+      setQueueBusy(null);
+    }
+  };
+
   const selectedStation = useMemo(() => {
     if (!stationId || !query.data) return null;
     return query.data.items.find((item) => String(item.id) === stationId) ?? null;
@@ -240,6 +270,16 @@ export default function ResidentStationsStatusPage() {
 
       {query.data ? (
         <div className="grid">
+          <div style={{ gridColumn: "span 12" }} className="section-actions">
+            <button className="btn btn--secondary touch-safe" type="button" onClick={handleRefresh}>
+              {occupancyQuery.loading || query.loading ? "Aggiornamento..." : "Aggiorna stato"}
+            </button>
+            {queueQuery.data?.queue_enabled && queueQuery.data.in_queue ? (
+              <button className="btn btn-secondary touch-safe" type="button" onClick={handleLeaveQueue} disabled={queueBusy !== null}>
+                {queueBusy === "leave" ? "Uscita..." : "Esci dalla coda"}
+              </button>
+            ) : null}
+          </div>
           <div style={{ gridColumn: "span 12" }}>
             <div className="device-tile-grid">
               {query.data.items.map((s) => {
@@ -260,10 +300,12 @@ export default function ResidentStationsStatusPage() {
                   (!usingFreshKnownStatus && (!live || isStale || (waitingForLive && displayStatus === "free")));
                 const statusLabel = occupancyLabel(displayStatus ?? "offline", { checking });
                 const statusTone = badgeToneFromLabel(statusLabel);
+                const isFree = displayStatus === "free";
+                const isBusy = displayStatus === "busy";
                 return (
                   <div
                     key={s.id}
-                    className={`device-tile device-tile--${statusTone}`}       
+                    className={`device-tile device-tile--${statusTone}`}
                   >
                     <WallboxIcon className="device-tile__icon" />
                     <div className={`device-tile__status device-tile__status--${statusTone}`}>{statusLabel}</div>
@@ -271,6 +313,23 @@ export default function ResidentStationsStatusPage() {
                     <div className="device-tile__meta">
                       {checkedAt ? formatAgeFromNow(checkedAt, now) : "Verifica in corso"}
                     </div>
+                    {isFree ? (
+                      <div style={{ marginTop: "8px" }}>
+                        <StatusBadge tone="ok" label="Disponibile" />
+                      </div>
+                    ) : null}
+                    {isBusy && queueQuery.data?.queue_enabled && !queueQuery.data.in_queue ? (
+                      <div style={{ marginTop: "8px" }}>
+                        <button className="btn btn--primary touch-safe" type="button" onClick={handleJoinQueue} disabled={queueBusy !== null}>
+                          {queueBusy === "join" ? "Ingresso..." : "Mettiti in coda"}
+                        </button>
+                      </div>
+                    ) : null}
+                    {isBusy && queueQuery.data?.queue_enabled && queueQuery.data.in_queue ? (
+                      <div style={{ marginTop: "8px" }}>
+                        <StatusBadge tone="ok" label={`In coda (posizione ${queueQuery.data.position ?? "-"})`} />
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}

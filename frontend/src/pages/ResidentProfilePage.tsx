@@ -4,6 +4,7 @@ import { endpoints } from "../shared/api/endpoints";
 import type { ResidentProfileResponse, TelegramLinkIssueResponse } from "../shared/api/types";
 import { useQuery } from "../shared/hooks/useQuery";
 import { EmptyState, ErrorState, LoadingState, PageHead, StatusBadge, Surface, formatDateTime } from "../shared/ui";
+import * as pushService from "../shared/notifications/pushService";
 
 export default function ResidentTelegramPage() {
   const fetcher = useMemo(() => () => endpoints.residentProfile(), []);
@@ -14,6 +15,7 @@ export default function ResidentTelegramPage() {
   const [telegramIssue, setTelegramIssue] = useState<TelegramLinkIssueResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [pushLoading, setPushLoading] = useState(false);
 
   async function issueTelegramLink() {
     setError(null);
@@ -44,6 +46,44 @@ export default function ResidentTelegramPage() {
       setError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Impossibile scollegare Telegram");
     } finally {
       setUnlinking(false);
+    }
+  }
+
+  async function enablePushNotifications() {
+    setError(null);
+    setMessage(null);
+    setPushLoading(true);
+    try {
+      const permission = await pushService.requestNotificationPermission();
+      if (permission !== "granted") {
+        setError("Permesso notifiche negato");
+        return;
+      }
+      const subscription = await pushService.subscribeToPush();
+      if (subscription) {
+        // TODO: Send subscription to backend when implemented
+        console.log("Push subscription created:", subscription);
+        setMessage("Notifiche push abilitate (placeholder).");
+      }
+    } catch (err) {
+      setError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Impossibile abilitare le notifiche push");
+    } finally {
+      setPushLoading(false);
+    }
+  }
+
+  async function disablePushNotifications() {
+    setError(null);
+    setMessage(null);
+    setPushLoading(true);
+    try {
+      await pushService.unsubscribeFromPush();
+      // TODO: Remove subscription from backend when implemented
+      setMessage("Notifiche push disabilitate (placeholder).");
+    } catch (err) {
+      setError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Impossibile disabilitare le notifiche push");
+    } finally {
+      setPushLoading(false);
     }
   }
 
@@ -104,6 +144,46 @@ export default function ResidentTelegramPage() {
               </div>
             ) : (
               <EmptyState title="Telegram non disponibile" message="Riprova tra qualche istante." />
+            )}
+          </Surface>
+        </div>
+
+        <div style={{ gridColumn: "span 12" }}>
+          <Surface title="Notifiche Push" subtitle="Ricevi aggiornamenti direttamente sul tuo dispositivo (placeholder)">
+            {query.data ? (
+              <div className="stack">
+                <div className="detail-grid">
+                  <div className="detail-card kv">
+                    <div className="kv__label">Colonnina disponibile</div>
+                    <div className="kv__value">{query.data.notification_preferences.station_available ? "Sì" : "No"}</div>
+                  </div>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Colonnina in uso</div>
+                    <div className="kv__value">{query.data.notification_preferences.station_busy ? "Sì" : "No"}</div>
+                  </div>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Colonnina torna online</div>
+                    <div className="kv__value">{query.data.notification_preferences.station_back_online ? "Sì" : "No"}</div>
+                  </div>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Ricarica completata</div>
+                    <div className="kv__value">{query.data.notification_preferences.charging_completed ? "Sì" : "No"}</div>
+                  </div>
+                </div>
+                <div className="muted">
+                  Questa è un'anteprima per il supporto alle notifiche push web, non ancora implementato completamente.
+                </div>
+                <div className="section-actions">
+                  <button className="btn btn--primary touch-safe" type="button" onClick={enablePushNotifications} disabled={pushLoading}>
+                    {pushLoading ? "Abilitazione..." : "Abilita notifiche push"}
+                  </button>
+                  <button className="btn btn--secondary touch-safe" type="button" onClick={disablePushNotifications} disabled={pushLoading}>
+                    {pushLoading ? "Disabilitazione..." : "Disabilita notifiche push"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <EmptyState title="Notifiche non disponibili" message="Riprova tra qualche istante." />
             )}
           </Surface>
         </div>
