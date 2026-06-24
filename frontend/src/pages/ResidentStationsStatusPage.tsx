@@ -289,7 +289,7 @@ export default function ResidentStationsStatusPage() {
           {showFreeStationMessage ? (
             <div style={{ gridColumn: "span 12", marginBottom: "16px" }}>
               <Surface>
-                <StatusBadge tone="ok" label="È presente almeno una colonnina libera. Non è necessario prenotare." />
+                <StatusBadge tone="warn" label="È già disponibile almeno una colonnina. Non è possibile entrare in coda finché esiste una postazione libera." />
                 <button
                   className="btn btn--secondary touch-safe"
                   type="button"
@@ -334,37 +334,6 @@ export default function ResidentStationsStatusPage() {
                     <div className="device-tile__meta">
                       {checkedAt ? formatAgeFromNow(checkedAt, now) : "Verifica in corso"}
                     </div>
-                    <div style={{ marginTop: "12px", width: "100%" }}>
-                      {!userInQueue ? (
-                        <button
-                          className="btn btn--primary touch-safe"
-                          type="button"
-                          onClick={handleQueueButtonClick}
-                          disabled={queueBusy !== null}
-                          style={{ width: "100%" }}
-                        >
-                          {queueBusy === "join" ? "Ingresso..." : "Prenota ricarica"}
-                        </button>
-                      ) : (
-                        <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px" }}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "center" }}>
-                            <StatusBadge tone="ok" label="⏳ In coda" />
-                            {queuePosition ? (
-                              <div style={{ fontSize: "14px", color: "#6b7280" }}>Posizione: {queuePosition}</div>
-                            ) : null}
-                          </div>
-                          <button
-                            className="btn btn--secondary touch-safe"
-                            type="button"
-                            onClick={handleLeaveQueue}
-                            disabled={queueBusy !== null}
-                            style={{ width: "100%" }}
-                          >
-                            {queueBusy === "leave" ? "Uscita..." : "Esci dalla coda"}
-                          </button>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 );
               })}
@@ -378,6 +347,37 @@ export default function ResidentStationsStatusPage() {
               />
             </div>
           ) : null}
+          <div style={{ gridColumn: "span 12", marginTop: "24px" }}>
+            <Surface title="Prenotazione ricarica" subtitle="Se entrambe le colonnine sono occupate puoi entrare in coda e riceverai una notifica quando si libera una postazione.">
+              {!userInQueue ? (
+                <button
+                  className="btn btn--primary touch-safe"
+                  type="button"
+                  onClick={handleQueueButtonClick}
+                  disabled={queueBusy !== null}
+                >
+                  {queueBusy === "join" ? "Ingresso..." : "Mettiti in coda"}
+                </button>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <StatusBadge tone="ok" label="Sei in coda" />
+                    {queuePosition ? (
+                      <div style={{ fontSize: "14px", color: "#6b7280" }}>Posizione #{queuePosition}</div>
+                    ) : null}
+                  </div>
+                  <button
+                    className="btn btn--secondary touch-safe"
+                    type="button"
+                    onClick={handleLeaveQueue}
+                    disabled={queueBusy !== null}
+                  >
+                    {queueBusy === "leave" ? "Uscita..." : "Esci dalla coda"}
+                  </button>
+                </div>
+              )}
+            </Surface>
+          </div>
         </div>
       ) : null}
     </div>
