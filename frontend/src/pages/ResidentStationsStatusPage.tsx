@@ -274,11 +274,6 @@ export default function ResidentStationsStatusPage() {
             <button className="btn btn--secondary touch-safe" type="button" onClick={handleRefresh}>
               {occupancyQuery.loading || query.loading ? "Aggiornamento..." : "Aggiorna stato"}
             </button>
-            {queueQuery.data?.queue_enabled && queueQuery.data.in_queue ? (
-              <button className="btn btn-secondary touch-safe" type="button" onClick={handleLeaveQueue} disabled={queueBusy !== null}>
-                {queueBusy === "leave" ? "Uscita..." : "Esci dalla coda"}
-              </button>
-            ) : null}
           </div>
           <div style={{ gridColumn: "span 12" }}>
             <div className="device-tile-grid">
@@ -302,6 +297,10 @@ export default function ResidentStationsStatusPage() {
                 const statusTone = badgeToneFromLabel(statusLabel);
                 const isFree = displayStatus === "free";
                 const isBusy = displayStatus === "busy";
+                const queueEnabled = queueQuery.data?.queue_enabled ?? false;
+                const userInQueue = queueQuery.data?.in_queue ?? false;
+                const queuePosition = queueQuery.data?.position ?? null;
+
                 return (
                   <div
                     key={s.id}
@@ -313,29 +312,56 @@ export default function ResidentStationsStatusPage() {
                     <div className="device-tile__meta">
                       {checkedAt ? formatAgeFromNow(checkedAt, now) : "Verifica in corso"}
                     </div>
-                    {isFree ? (
-                      <div style={{ marginTop: "8px" }}>
-                        <StatusBadge tone="ok" label="Disponibile" />
-                      </div>
-                    ) : null}
-                    {isBusy && queueQuery.data?.queue_enabled && !queueQuery.data.in_queue ? (
-                      <div style={{ marginTop: "8px" }}>
-                        <button className="btn btn--primary touch-safe" type="button" onClick={handleJoinQueue} disabled={queueBusy !== null}>
+                    <div style={{ marginTop: "12px", width: "100%" }}>
+                      {isFree ? (
+                        <div style={{ textAlign: "center" }}>
+                          <StatusBadge tone="ok" label="Disponibile" />
+                        </div>
+                      ) : null}
+                      {isBusy && !userInQueue ? (
+                        <button
+                          className="btn btn--primary touch-safe"
+                          type="button"
+                          onClick={handleJoinQueue}
+                          disabled={queueBusy !== null}
+                          style={{ width: "100%" }}
+                        >
                           {queueBusy === "join" ? "Ingresso..." : "Mettiti in coda"}
                         </button>
-                      </div>
-                    ) : null}
-                    {isBusy && queueQuery.data?.queue_enabled && queueQuery.data.in_queue ? (
-                      <div style={{ marginTop: "8px" }}>
-                        <StatusBadge tone="ok" label={`In coda (posizione ${queueQuery.data.position ?? "-"})`} />
-                      </div>
-                    ) : null}
+                      ) : null}
+                      {isBusy && userInQueue ? (
+                        <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "8px" }}>
+                          <StatusBadge
+                            tone="ok"
+                            label={queuePosition ? `⏳ In coda (posizione ${queuePosition})` : "⏳ In coda"}
+                          />
+                          <button
+                            className="btn btn--secondary touch-safe"
+                            type="button"
+                            onClick={handleLeaveQueue}
+                            disabled={queueBusy !== null}
+                            style={{ width: "100%" }}
+                          >
+                            {queueBusy === "leave" ? "Uscita..." : "Esci dalla coda"}
+                          </button>
+                        </div>
+                      ) : null}
+                      {!isFree && !isBusy ? (
+                        <div style={{ textAlign: "center" }}>
+                          <StatusBadge tone="warn" label="Non disponibile" />
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })}
             </div>
           </div>
-
+          <div style={{ gridColumn: "span 12", marginTop: "16px" }}>
+            <p style={{ fontSize: "14px", color: "#6b7280", textAlign: "center" }}>
+              Entra in coda e ricevi una notifica appena una postazione diventa disponibile.
+            </p>
+          </div>
           {!query.data.items.length ? (
             <div style={{ gridColumn: "span 12" }}>
               <EmptyState
