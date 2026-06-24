@@ -232,7 +232,7 @@ export default function ResidentStationsStatusPage() {
 
   return (
     <div>
-      <PageHead title="Condo Charge" subtitle="Controlla subito se una colonnina e libera" />
+      <PageHead title="Condo Charge" subtitle="Disponibilità in tempo reale" />
 
       {query.loading ? <LoadingState label="Caricamento colonnine…" /> : null}
       {query.error ? <ErrorState title="Impossibile caricare lo stato colonnine" message={query.error} onRetry={query.refetch} /> : null}
@@ -240,54 +240,44 @@ export default function ResidentStationsStatusPage() {
       {query.data ? (
         <div className="grid">
           <div style={{ gridColumn: "span 12" }}>
-            <Surface
-              title="Colonnine"
-              subtitle="Tocca una tessera per vedere i dettagli"
-              aside={
-                <button className="btn btn--primary touch-safe" type="button" onClick={() => occupancyQuery.refetch()}>
-                  Aggiorna
-                </button>
-              }
-            >
-              <div className="device-tile-grid">
-                {query.data.items.map((s) => {
-                  const live = occupancyById.get(s.id);
-                  const displayStatus = resolveDisplayedStatus(s.known_status, s.status_is_fresh, live);
-                  const checkedAt = resolveDisplayedCheckedAt(s, live);
-                  const checkedAtMs = checkedAt ? new Date(checkedAt).getTime() : null;
-                  const ageMs = checkedAtMs != null && !Number.isNaN(checkedAtMs) ? Math.max(0, now.getTime() - checkedAtMs) : null;
-                  const isStale = ageMs != null ? ageMs > STALE_AFTER_MS : true;
-                  const waitingForLive = occupancyQuery.loading || occupancyQuery.refreshing;
-                  const usingFreshKnownStatus =
-                    s.status_is_fresh &&
-                    normalizeStatus(s.known_status) != null &&
-                    normalizeStatus(live?.computed_status) === "unavailable" &&
-                    live?.source !== "agent";
-                  const checking =
-                    !displayStatus ||
-                    (!usingFreshKnownStatus && (!live || isStale || (waitingForLive && displayStatus === "free")));
-                  const statusLabel = occupancyLabel(displayStatus ?? "offline", { checking });
-                  const statusTone = badgeToneFromLabel(statusLabel);
-                  return (
-                    <button
-                      key={s.id}
-                      className={`device-tile device-tile--${statusTone}`}
-                      type="button"
-                      onClick={() => navigate(`/resident/stato-colonnine/${s.id}`)}
-                    >
-                      <div className="device-tile__icon" aria-hidden="true">
-                        ⚡
-                      </div>
-                      <div className="device-tile__title">{s.name ?? `Colonnina ${s.id}`}</div>
-                      <div className={`device-tile__status device-tile__status--${statusTone}`}>{statusLabel}</div>
-                      <div className="device-tile__meta">
-                        {checkedAt ? formatAgeFromNow(checkedAt, now) : "Verifica in corso"}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </Surface>
+            <div className="device-tile-grid">
+              {query.data.items.map((s) => {
+                const live = occupancyById.get(s.id);
+                const displayStatus = resolveDisplayedStatus(s.known_status, s.status_is_fresh, live);
+                const checkedAt = resolveDisplayedCheckedAt(s, live);
+                const checkedAtMs = checkedAt ? new Date(checkedAt).getTime() : null;
+                const ageMs = checkedAtMs != null && !Number.isNaN(checkedAtMs) ? Math.max(0, now.getTime() - checkedAtMs) : null;
+                const isStale = ageMs != null ? ageMs > STALE_AFTER_MS : true;
+                const waitingForLive = occupancyQuery.loading || occupancyQuery.refreshing;
+                const usingFreshKnownStatus =
+                  s.status_is_fresh &&
+                  normalizeStatus(s.known_status) != null &&
+                  normalizeStatus(live?.computed_status) === "unavailable" &&
+                  live?.source !== "agent";
+                const checking =
+                  !displayStatus ||
+                  (!usingFreshKnownStatus && (!live || isStale || (waitingForLive && displayStatus === "free")));
+                const statusLabel = occupancyLabel(displayStatus ?? "offline", { checking });
+                const statusTone = badgeToneFromLabel(statusLabel);
+                return (
+                  <div
+                    key={s.id}
+                    className={`device-tile device-tile--${statusTone}`}
+                  >
+                    <div className="device-tile__icon" aria-hidden="true">
+                      <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M13 1L4 13H9V21H15V13H20L13 1Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </div>
+                    <div className="device-tile__title">{s.name ?? `Colonnina ${s.id}`}</div>
+                    <div className={`device-tile__status device-tile__status--${statusTone}`}>{statusLabel}</div>
+                    <div className="device-tile__meta">
+                      {checkedAt ? formatAgeFromNow(checkedAt, now) : "Verifica in corso"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {!query.data.items.length ? (
@@ -298,16 +288,6 @@ export default function ResidentStationsStatusPage() {
               />
             </div>
           ) : null}
-
-          <div style={{ gridColumn: "span 12" }}>
-            <Surface title="Riepilogo" subtitle="Disponibilita generale">
-              <div className="row">
-                <StatusBadge tone="ok" label={`Libere: ${stats.free}`} />
-                <StatusBadge tone="danger" label={`In uso: ${stats.busy}`} />
-                <StatusBadge tone="warn" label={`Non disponibili: ${stats.unavailable}`} />
-              </div>
-            </Surface>
-          </div>
         </div>
       ) : null}
     </div>

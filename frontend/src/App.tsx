@@ -398,6 +398,18 @@ export default function App() {
             }
           />
           <Route
+            path="/resident/stato-colonnine/:stationId"
+            element={
+              <Suspense fallback={<LoadingState label="Caricamento pagina…" />}>
+                <RequireRole allow={["resident"]}>
+                  <RequirePasswordChanged>
+                    <ResidentStationsStatusPage />
+                  </RequirePasswordChanged>
+                </RequireRole>
+              </Suspense>
+            }
+          />
+          <Route
             path="/resident/ricariche"
             element={
               <Suspense fallback={<LoadingState label="Caricamento pagina…" />}>
