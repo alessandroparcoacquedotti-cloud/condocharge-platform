@@ -3,7 +3,18 @@ import { useMemo } from "react";
 import { endpoints } from "../shared/api/endpoints";
 import type { ResidentStationOccupancyListResponse, ResidentStationStatusListResponse } from "../shared/api/types";
 import { useQuery } from "../shared/hooks/useQuery";
-import { ErrorState, LoadingState, PageHead, formatAgeFromNow, formatDateTime, formatKwhFromWh } from "../shared/ui";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  MetricCard,
+  PageHead,
+  StatusBadge,
+  Surface,
+  formatAgeFromNow,
+  formatDateTime,
+  formatKwhFromWh,
+} from "../shared/ui";
 
 const REFRESH_MS = 10000;
 const STALE_AFTER_MS = 30000;
@@ -26,6 +37,16 @@ function occupancyBadge(computed: string | null | undefined, opts: { checking: b
   }
   if (opts.checking) return { label: "🟡 CHECKING STATUS", tone: "" as const };
   return { label: "🟢 FREE", tone: "is-ok" as const };
+}
+
+function occupancyLabel(computed: string | null | undefined, opts: { checking: boolean }) {
+  const s = (computed ?? "").toLowerCase();
+  if (s === "busy" || s === "charging" || s === "occupied") return "Occupata";
+  if (s === "unavailable" || s === "offline" || s === "faulted" || s === "unknown" || s === "unreachable" || s === "degraded") {
+    return "Non disponibile";
+  }
+  if (opts.checking) return "Verifica in corso";
+  return "Disponibile";
 }
 
 function resolveDisplayedStatus(
@@ -67,12 +88,40 @@ export default function ResidentStationsStatusPage() {
     return new Map(items.map((x) => [x.station_id, x]));
   }, [occupancyQuery.data]);
   const now = new Date();
+  const stats = useMemo(() => {
+    const items = query.data?.items ?? [];
+    let free = 0;
+    let busy = 0;
+    let unavailable = 0;
+    for (const station of items) {
+      const live = occupancyById.get(station.id);
+      const displayStatus = resolveDisplayedStatus(station.known_status, station.status_is_fresh, live);
+      if (displayStatus === "free") free += 1;
+      else if (displayStatus === "busy") busy += 1;
+      else unavailable += 1;
+    }
+    return { total: items.length, free, busy, unavailable };
+  }, [occupancyById, query.data]);
+
+  const openProfile = () => {
+    window.location.assign("/resident/profilo");
+  };
 
   return (
     <div>
       <PageHead
         title="Stato colonnine"
-        subtitle="Disponibilità live e ultima ricarica registrata"
+        subtitle="Vista mobile immediata su disponibilita, aggiornamenti live e ultima attivita"
+        right={
+          <div className="section-actions">
+            <button className="btn btn--secondary touch-safe" type="button" onClick={openProfile}>
+              Telegram e profilo
+            </button>
+            <button className="btn btn--primary touch-safe" type="button" onClick={() => occupancyQuery.refetch()}>
+              Aggiorna ora
+            </button>
+          </div>
+        }
       />
 
       {query.loading ? <LoadingState label="Caricamento colonnine…" /> : null}
@@ -80,6 +129,26 @@ export default function ResidentStationsStatusPage() {
 
       {query.data ? (
         <div className="grid">
+          <div style={{ gridColumn: "span 12" }}>
+            <Surface
+              title="Disponibilita in tempo reale"
+              subtitle="Colpo d'occhio rapido prima di scendere in garage"
+              className="surface--accent hero-card"
+            >
+              <div className="grid">
+                <MetricCard label="Disponibili" value={stats.free} meta="Pronte all'uso" icon="EV" accent />
+                <MetricCard label="In uso" value={stats.busy} meta="Occupate o in carica" icon="BUSY" />
+                <MetricCard label="Non disponibili" value={stats.unavailable} meta="Offline o non raggiungibili" icon="OFF" />
+                <MetricCard
+                  label="Ultimo refresh"
+                  value={occupancyQuery.refreshing ? "Live" : "OK"}
+                  meta={`Stazioni viste: ${stats.total}`}
+                  icon="NOW"
+                />
+              </div>
+            </Surface>
+          </div>
+
           {query.data.items.map((s) => {
             const live = occupancyById.get(s.id);
             const displayStatus = resolveDisplayedStatus(s.known_status, s.status_is_fresh, live);
@@ -93,43 +162,58 @@ export default function ResidentStationsStatusPage() {
             const checking = !displayStatus || (!usingFreshKnownStatus && (!live || isStale || (waitingForLive && displayStatus === "free")));
             const badge = occupancyBadge(displayStatus ?? "offline", { checking });
             return (
-              <div key={s.id} className="card" style={{ gridColumn: "span 6" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
+              <div key={s.id} className="card station-card" style={{ gridColumn: "span 6" }}>
+                <div className="station-card__head">
                   <div>
-                    <div style={{ fontWeight: 800, fontSize: 16 }}>{s.name ?? `Stazione #${s.id}`}</div>
-                    <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                      Ultimo aggiornamento dati: {formatDateTime(s.last_sync_at)}
-                    </div>
-                    <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                    <h2 className="station-card__title">{s.name ?? `Stazione #${s.id}`}</h2>
+                    <div className="station-card__subtitle">Ultimo aggiornamento dati: {formatDateTime(s.last_sync_at)}</div>
+                    <div className="station-card__subtitle">
                       {checkedAt ? `${formatAgeFromNow(checkedAt, now)} (${formatDateTime(checkedAt)})` : "🟡 CHECKING STATUS…"}
                     </div>
                   </div>
-                  <span className={badge.tone ? `pill ${badge.tone}` : "pill"}>{badge.label}</span>
+                  <span className={badge.tone ? `status-badge status-badge--${badge.tone === "is-ok" ? "ok" : badge.tone === "is-danger" ? "danger" : "warn"}` : "status-badge status-badge--neutral"}>
+                    {badge.label}
+                  </span>
                 </div>
 
-                <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-                  <div className="pill" style={{ justifyContent: "space-between" }}>
-                    <span>Ultima ricarica registrata</span>
-                    <span className="muted">
-                      {s.last_charge ? formatDateTime(s.last_charge.end_time) : "-"}
-                    </span>
+                <div className="detail-grid">
+                  <div className="detail-card kv">
+                    <div className="kv__label">Ultima ricarica</div>
+                    <div className="kv__value">{s.last_charge ? formatDateTime(s.last_charge.end_time) : "-"}</div>
                   </div>
-                  <div className="row" style={{ justifyContent: "space-between" }}>
-                    <span className="pill">
-                      Energia: <span className="muted">{s.last_charge ? `${formatKwhFromWh(s.last_charge.energy_wh)} kWh` : "-"}</span>
-                    </span>
-                    <span className="pill">
-                      Durata: <span className="muted">{s.last_charge ? `${s.last_charge.total_minutes} min` : "-"}</span>
-                    </span>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Energia</div>
+                    <div className="kv__value">{s.last_charge ? `${formatKwhFromWh(s.last_charge.energy_wh)} kWh` : "-"}</div>
                   </div>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Durata</div>
+                    <div className="kv__value">{s.last_charge ? `${s.last_charge.total_minutes} min` : "-"}</div>
+                  </div>
+                  <div className="detail-card kv">
+                    <div className="kv__label">Stato live</div>
+                    <div className="kv__value">{occupancyLabel(displayStatus ?? "offline", { checking })}</div>
+                  </div>
+                </div>
+
+                <div className="row">
+                  <StatusBadge tone="neutral" label={checkedAt ? formatDateTime(checkedAt) : "In aggiornamento"} />
+                  <StatusBadge tone={isStale ? "warn" : "ok"} label={isStale ? "Dati da verificare" : "Dati freschi"} />
                 </div>
               </div>
             );
           })}
 
           {!query.data.items.length ? (
-            <div className="card" style={{ gridColumn: "span 12" }}>
-              <div className="muted">Nessuna colonnina disponibile per questo condominio.</div>
+            <div style={{ gridColumn: "span 12" }}>
+              <EmptyState
+                title="Nessuna colonnina disponibile"
+                message="Quando una stazione verra configurata qui comparira il suo stato in tempo reale."
+                action={
+                  <button className="btn btn--secondary touch-safe" type="button" onClick={openProfile}>
+                    Apri profilo
+                  </button>
+                }
+              />
             </div>
           ) : null}
         </div>

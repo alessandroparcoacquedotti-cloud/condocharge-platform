@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { endpoints } from "../shared/api/endpoints";
 import { useQuery } from "../shared/hooks/useQuery";
@@ -7,9 +6,13 @@ import { AgentStatusCard } from "../shared/ui/AgentStatusCard";
 import {
   DateRange,
   DateRangeControls,
+  EmptyState,
   ErrorState,
   LoadingState,
+  MetricCard,
   PageHead,
+  StatusBadge,
+  Surface,
   buildPresetRange,
   formatDateTime,
   formatKwhFromWh,
@@ -22,6 +25,37 @@ export default function DashboardPage() {
 
   const fetcher = useMemo(() => () => endpoints.dashboardSummary(toApiRange(range)), [range]);
   const summaryQuery = useQuery(fetcher);
+  const alerts = useMemo(() => {
+    if (!summaryQuery.data) return [];
+    const next: Array<{ tone: "ok" | "warn" | "danger"; label: string; message: string }> = [];
+    if (!summaryQuery.data.agent_status.online) {
+      next.push({
+        tone: "danger",
+        label: "Agente offline",
+        message: "La sincronizzazione live e ferma: controlla heartbeat e importazioni.",
+      });
+    } else if (summaryQuery.data.agent_status.health_color === "yellow") {
+      next.push({
+        tone: "warn",
+        label: "Agente da verificare",
+        message: "Sono presenti warning o ritardi recenti nella telemetria.",
+      });
+    } else {
+      next.push({
+        tone: "ok",
+        label: "Sistema operativo",
+        message: "Agente e dashboard risultano stabili nel periodo selezionato.",
+      });
+    }
+    if (!summaryQuery.data.latest_session) {
+      next.push({
+        tone: "warn",
+        label: "Nessuna ricarica recente",
+        message: "Nel periodo selezionato non risultano nuove sessioni importate.",
+      });
+    }
+    return next;
+  }, [summaryQuery.data]);
 
   return (
     <div>
@@ -41,9 +75,7 @@ export default function DashboardPage() {
                 }
               }}
             />
-            <div className="pill">
-              Endpoint: <span className="muted">/api/v1/dashboard/summary</span>
-            </div>
+            <StatusBadge tone="neutral" label="/api/v1/dashboard/summary" />
           </>
         }
       />
@@ -55,104 +87,102 @@ export default function DashboardPage() {
 
       {summaryQuery.data ? (
         <div className="grid">
-          <div className="card" style={{ gridColumn: "span 3" }}>
-            <div className="card-title">Ricariche totali</div>
-            <div className="metric">{summaryQuery.data.total_sessions}</div>
+          <div style={{ gridColumn: "span 12" }}>
+            <Surface
+              title="Overview operativa"
+              subtitle="KPI puliti per una lettura immediata di stazioni, utenti e sessioni"
+              className="surface--accent hero-card"
+            >
+              <div className="grid">
+                <MetricCard label="Ricariche" value={summaryQuery.data.total_sessions} meta="Sessioni nel periodo" icon="01" accent />
+                <MetricCard
+                  label="Energia"
+                  value={`${formatNumber(summaryQuery.data.total_energy_kwh, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kWh`}
+                  meta={`${formatNumber(summaryQuery.data.total_energy_wh)} Wh`}
+                  icon="kWh"
+                />
+                <MetricCard label="Utenti attivi" value={summaryQuery.data.total_users} meta="Residenti con dati disponibili" icon="USR" />
+                <MetricCard label="Colonnine attive" value={summaryQuery.data.total_stations} meta="Stazioni monitorate" icon="EV" />
+              </div>
+            </Surface>
           </div>
-          <div className="card" style={{ gridColumn: "span 3" }}>
-            <div className="card-title">Energia totale (kWh)</div>
-            <div className="metric">{formatNumber(summaryQuery.data.total_energy_kwh, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              {formatNumber(summaryQuery.data.total_energy_wh)} Wh
-            </div>
-          </div>
-          <div className="card" style={{ gridColumn: "span 3" }}>
-            <div className="card-title">Utenti attivi</div>
-            <div className="metric">{summaryQuery.data.total_users}</div>
-          </div>
-          <div className="card" style={{ gridColumn: "span 3" }}>
-            <div className="card-title">Colonnine attive</div>
-            <div className="metric">{summaryQuery.data.total_stations}</div>
+
+          <div style={{ gridColumn: "span 7" }}>
+            <Surface title="Alert" subtitle="Segnali prioritari per l'operativita giornaliera">
+              <div className="list">
+                {alerts.map((alert) => (
+                  <div key={alert.label} className="list-item">
+                    <div>
+                      <div className="list-item__title">{alert.label}</div>
+                      <div className="list-item__meta">{alert.message}</div>
+                    </div>
+                    <StatusBadge tone={alert.tone} label={alert.tone === "ok" ? "OK" : alert.tone === "warn" ? "CHECK" : "URGENTE"} />
+                  </div>
+                ))}
+              </div>
+            </Surface>
           </div>
 
           <AgentStatusCard status={summaryQuery.data.agent_status} />
 
-          <div className="card" style={{ gridColumn: "span 5" }}>
-            <div className="card-title">Ultima ricarica</div>
-            {summaryQuery.data.latest_session ? (
-              <div style={{ display: "grid", gap: 8 }}>
-                <div className="row">
-                  <span className="pill is-ok">Importata</span>
-                  <span className="pill">
-                    Colonnina:{" "}
-                    <span className="muted">
-                      {summaryQuery.data.latest_session.station?.host ??
-                        `#${summaryQuery.data.latest_session.station_id}`}
-                    </span>
-                  </span>
-                  <span className="pill">
-                    Tessera:{" "}
-                    <span className="muted">
-                      {summaryQuery.data.latest_session.rfid_user?.name ??
-                        summaryQuery.data.latest_session.rfid_user?.rfid_id ??
-                        "-"}
-                    </span>
-                  </span>
+          <div style={{ gridColumn: "span 5" }}>
+            <Surface title="Ultima ricarica" subtitle="Evento piu recente importato">
+              {summaryQuery.data.latest_session ? (
+                <div className="stack">
+                  <div className="row">
+                    <StatusBadge tone="ok" label="Importata" />
+                    <StatusBadge tone="neutral" label={summaryQuery.data.latest_session.station?.host ?? `#${summaryQuery.data.latest_session.station_id}`} />
+                  </div>
+                  <div className="detail-grid">
+                    <div className="detail-card kv">
+                      <div className="kv__label">Fine sessione</div>
+                      <div className="kv__value">{formatDateTime(summaryQuery.data.latest_session.end_time)}</div>
+                    </div>
+                    <div className="detail-card kv">
+                      <div className="kv__label">Energia</div>
+                      <div className="kv__value">{formatKwhFromWh(summaryQuery.data.latest_session.energy_wh)} kWh</div>
+                    </div>
+                    <div className="detail-card kv">
+                      <div className="kv__label">Durata</div>
+                      <div className="kv__value">{summaryQuery.data.latest_session.total_minutes} min</div>
+                    </div>
+                    <div className="detail-card kv">
+                      <div className="kv__label">Utente</div>
+                      <div className="kv__value">
+                        {summaryQuery.data.latest_session.rfid_user?.name ?? summaryQuery.data.latest_session.rfid_user?.rfid_id ?? "-"}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-
-                <div className="row">
-                  <span className="pill">
-                    Fine: <span className="muted">{formatDateTime(summaryQuery.data.latest_session.end_time)}</span>
-                  </span>
-                  <span className="pill">
-                    Energia:{" "}
-                    <span className="muted">{formatKwhFromWh(summaryQuery.data.latest_session.energy_wh)} kWh</span>
-                  </span>
-                  <span className="pill">
-                    Durata: <span className="muted">{summaryQuery.data.latest_session.total_minutes} min</span>
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="muted">Nessuna ricarica importata.</div>
-            )}
+              ) : (
+                <EmptyState title="Nessuna ricarica importata" message="Il dashboard non ha ancora sessioni nel periodo selezionato." />
+              )}
+            </Surface>
           </div>
 
-          <div className="card" style={{ gridColumn: "span 7" }}>
-            <div className="card-title">Top utenti per energia (kWh)</div>
-            {summaryQuery.data.top_users_by_energy.length ? (
-              <div style={{ width: "100%", height: 320 }}>
-                <ResponsiveContainer>
-                  <BarChart data={summaryQuery.data.top_users_by_energy}>
-                    <CartesianGrid stroke="rgba(234, 240, 255, 0.12)" strokeDasharray="3 3" />
-                    <XAxis
-                      dataKey="rfid_id"
-                      tick={{ fill: "rgba(234, 240, 255, 0.75)", fontSize: 12 }}
-                      axisLine={{ stroke: "rgba(234, 240, 255, 0.18)" }}
-                      tickLine={{ stroke: "rgba(234, 240, 255, 0.18)" }}
-                    />
-                    <YAxis
-                      tick={{ fill: "rgba(234, 240, 255, 0.75)", fontSize: 12 }}
-                      axisLine={{ stroke: "rgba(234, 240, 255, 0.18)" }}
-                      tickLine={{ stroke: "rgba(234, 240, 255, 0.18)" }}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "rgba(17, 26, 46, 0.95)",
-                        border: "1px solid rgba(234, 240, 255, 0.15)",
-                        borderRadius: 10,
-                        color: "rgba(234, 240, 255, 0.9)",
-                      }}
-                      formatter={(value: any) => [`${formatNumber(Number(value), { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kWh`, "Energia"]}
-                      labelFormatter={(label) => `Tessera: ${label}`}
-                    />
-                    <Bar dataKey="total_energy_kwh" fill="#6aa7ff" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="muted">Nessun utente con ricariche importate.</div>
-            )}
+          <div style={{ gridColumn: "span 7" }}>
+            <Surface title="Top utenti per energia" subtitle="Classifica essenziale senza grafici pesanti">
+              {summaryQuery.data.top_users_by_energy.length ? (
+                <div className="list">
+                  {summaryQuery.data.top_users_by_energy.map((user, index) => (
+                    <div key={`${user.user_id}-${user.rfid_id}`} className="list-item">
+                      <div>
+                        <div className="list-item__title">
+                          #{index + 1} {user.name ?? user.rfid_id}
+                        </div>
+                        <div className="list-item__meta">{user.session_count} ricariche</div>
+                      </div>
+                      <StatusBadge
+                        tone="neutral"
+                        label={`${formatNumber(user.total_energy_kwh, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kWh`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="Nessun utente classificato" message="Non sono presenti ricariche sufficienti per generare la classifica." />
+              )}
+            </Surface>
           </div>
         </div>
       ) : null}

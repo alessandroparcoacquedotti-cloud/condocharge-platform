@@ -53,8 +53,22 @@ export default function LoginPage() {
   return (
     <div className="auth-wrap">
       <div className="auth-card card">
-        <div className="auth-title">CondoCharge</div>
-        <div className="auth-subtitle muted">Accedi per visualizzare i dati di ricarica</div>
+        <div className="auth-hero">
+          <div className="brand">
+            <div className="brand__mark" aria-hidden="true">
+              C
+            </div>
+            <div className="brand__copy">
+              <div className="brand__eyebrow">Premium EV App</div>
+              <div className="auth-title">CondoCharge</div>
+            </div>
+          </div>
+          <p className="auth-subtitle">Accedi per controllare disponibilita delle colonnine, ricariche e consumi in un'unica esperienza mobile.</p>
+          <div className="row">
+            <span className="pill">{env.defaultCondominiumName}</span>
+            <span className="pill">Web app installabile</span>
+          </div>
+        </div>
 
         {error ? <ErrorState title="Accesso non riuscito" message={error} /> : null}
 
@@ -80,7 +94,7 @@ export default function LoginPage() {
               required
             />
           </label>
-          <button className="btn auth-submit" type="submit" disabled={!canSubmit || submitting}>
+          <button className="btn auth-submit touch-safe" type="submit" disabled={!canSubmit || submitting}>
             {submitting ? "Accesso in corso…" : "Accedi"}
           </button>
         </form>

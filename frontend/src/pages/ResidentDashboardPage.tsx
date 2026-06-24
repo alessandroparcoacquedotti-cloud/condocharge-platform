@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { endpoints } from "../shared/api/endpoints";
 import type { ResidentSummaryResponse } from "../shared/api/types";
@@ -8,9 +7,13 @@ import { ResidentQueueCard } from "../shared/ui/ResidentQueueCard";
 import {
   DateRange,
   DateRangeControls,
+  EmptyState,
   ErrorState,
   LoadingState,
+  MetricCard,
   PageHead,
+  StatusBadge,
+  Surface,
   buildPresetRange,
   formatCurrencyEur,
   formatDateTime,
@@ -63,86 +66,112 @@ export default function ResidentDashboardPage() {
 
       {summaryQuery.data ? (
         <div className="grid">
-          <div className="card" style={{ gridColumn: "span 3" }}>
-            <div className="card-title">Ricariche totali</div>
-            <div className="metric">{summaryQuery.data.total_sessions}</div>
-          </div>
-          <div className="card" style={{ gridColumn: "span 3" }}>
-            <div className="card-title">Energia totale (kWh)</div>
-            <div className="metric">
-              {formatNumber(summaryQuery.data.total_energy_kwh, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
-            </div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              {formatNumber(summaryQuery.data.total_energy_wh)} Wh
-            </div>
-          </div>
-          <div className="card" style={{ gridColumn: "span 3" }}>
-            <div className="card-title">Spesa stimata</div>
-            <div className="metric">{formatCurrencyEur(summaryQuery.data.estimated_cost_eur)}</div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              Prezzo energia: {formatCurrencyEur(summaryQuery.data.energy_price_eur_per_kwh, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}/kWh
-            </div>
-          </div>
-          <div className="card" style={{ gridColumn: "span 3" }}>
-            <div className="card-title">Spesa annua stimata</div>
-            <div className="metric">{formatCurrencyEur(summaryQuery.data.estimated_annual_cost_eur)}</div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              Basata sul periodo selezionato
-            </div>
-          </div>
-          <div className="card" style={{ gridColumn: "span 3" }}>
-            <div className="card-title">Ultima ricarica registrata</div>
-            <div className="metric" style={{ fontSize: 18 }}>
-              {formatDateTime(summaryQuery.data.latest_session?.end_time ?? null)}
-            </div>
-            <div className="muted" style={{ marginTop: 6 }}>
-              {summaryQuery.data.latest_session
-                ? `${formatKwhFromWh(summaryQuery.data.latest_session.energy_wh)} kWh`
-                : "Nessuna ricarica registrata nel periodo selezionato"}
-            </div>
+          <div style={{ gridColumn: "span 12" }}>
+            <Surface
+              title="Panoramica personale"
+              subtitle="Numeri chiari, costi stimati e accesso rapido ai dati piu importanti"
+              className="surface--accent hero-card"
+              aside={<StatusBadge tone="neutral" label="Periodo selezionato" />}
+            >
+              <div className="grid">
+                <MetricCard
+                  className=""
+                  label="Ricariche totali"
+                  value={summaryQuery.data.total_sessions}
+                  meta="Sessioni incluse nel periodo"
+                  icon="01"
+                  accent
+                />
+                <MetricCard
+                  label="Energia totale"
+                  value={`${formatNumber(summaryQuery.data.total_energy_kwh, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kWh`}
+                  meta={`${formatNumber(summaryQuery.data.total_energy_wh)} Wh registrati`}
+                  icon="kWh"
+                />
+                <MetricCard
+                  label="Spesa stimata"
+                  value={formatCurrencyEur(summaryQuery.data.estimated_cost_eur)}
+                  meta={`Tariffa: ${formatCurrencyEur(summaryQuery.data.energy_price_eur_per_kwh, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}/kWh`}
+                  icon="EUR"
+                />
+                <MetricCard
+                  label="Proiezione annuale"
+                  value={formatCurrencyEur(summaryQuery.data.estimated_annual_cost_eur)}
+                  meta="Basata sull'uso del periodo selezionato"
+                  icon="12M"
+                />
+              </div>
+            </Surface>
           </div>
 
-          <div className="card" style={{ gridColumn: "span 6" }}>
-            <div className="card-title">Tessere collegate</div>
-            {summaryQuery.data.cards.length ? (
-              <div style={{ display: "grid", gap: 8 }}>
-                {summaryQuery.data.cards.map((c) => (
-                  <div key={c.id} className="pill" style={{ justifyContent: "space-between" }}>
-                    <span>{c.name ?? "Tessera senza nome"}</span>
-                    <span className="muted">{c.rfid_id}</span>
+          <div style={{ gridColumn: "span 7" }}>
+            <Surface title="Ultima ricarica" subtitle="Il tuo ultimo evento importato">
+              {summaryQuery.data.latest_session ? (
+                <div className="stack">
+                  <div className="row">
+                    <StatusBadge tone="ok" label="Registrata" />
+                    <StatusBadge tone="neutral" label={formatDateTime(summaryQuery.data.latest_session.end_time)} />
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="muted">Nessuna tessera collegata al tuo account.</div>
-            )}
+                  <div className="detail-grid">
+                    <div className="detail-card kv">
+                      <div className="kv__label">Energia</div>
+                      <div className="kv__value">{formatKwhFromWh(summaryQuery.data.latest_session.energy_wh)} kWh</div>
+                    </div>
+                    <div className="detail-card kv">
+                      <div className="kv__label">Durata</div>
+                      <div className="kv__value">{summaryQuery.data.latest_session.total_minutes} min</div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <EmptyState title="Nessuna ricarica recente" message="Seleziona un periodo piu ampio per vedere le sessioni importate." />
+              )}
+            </Surface>
           </div>
-          <div className="card" style={{ gridColumn: "span 6" }}>
-            <div className="card-title">Andamento mensile</div>
-            {summaryQuery.data.monthly_breakdown.length ? (
-              <div style={{ width: "100%", height: 280 }}>
-                <ResponsiveContainer>
-                  <BarChart data={summaryQuery.data.monthly_breakdown}>
-                    <CartesianGrid stroke="rgba(234, 240, 255, 0.12)" strokeDasharray="3 3" />
-                    <XAxis dataKey="month" tick={{ fill: "rgba(234, 240, 255, 0.75)", fontSize: 12 }} axisLine={{ stroke: "rgba(234, 240, 255, 0.18)" }} tickLine={{ stroke: "rgba(234, 240, 255, 0.18)" }} />
-                    <YAxis tick={{ fill: "rgba(234, 240, 255, 0.75)", fontSize: 12 }} axisLine={{ stroke: "rgba(234, 240, 255, 0.18)" }} tickLine={{ stroke: "rgba(234, 240, 255, 0.18)" }} />
-                    <Tooltip
-                      contentStyle={{
-                        background: "rgba(17, 26, 46, 0.95)",
-                        border: "1px solid rgba(234, 240, 255, 0.15)",
-                        borderRadius: 10,
-                        color: "rgba(234, 240, 255, 0.9)",
-                      }}
-                      formatter={(value: any) => [`${formatNumber(Number(value), { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kWh`, "Energia"]}
-                    />
-                    <Bar dataKey="total_energy_kwh" fill="#6aa7ff" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="muted">Nessun dato mensile disponibile per il periodo selezionato.</div>
-            )}
+
+          <div style={{ gridColumn: "span 5" }}>
+            <Surface title="Tessere collegate" subtitle="RFID associati al tuo profilo">
+              {summaryQuery.data.cards.length ? (
+                <div className="list">
+                  {summaryQuery.data.cards.map((c) => (
+                    <div key={c.id} className="list-item">
+                      <div>
+                        <div className="list-item__title">{c.name ?? "Tessera senza nome"}</div>
+                        <div className="list-item__meta">ID {c.rfid_id}</div>
+                      </div>
+                      <StatusBadge tone="neutral" label="Attiva" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="Nessuna tessera collegata" message="Contatta l'amministratore per associare una tessera RFID al tuo account." />
+              )}
+            </Surface>
           </div>
+
+          <div style={{ gridColumn: "span 6" }}>
+            <Surface title="Andamento mensile" subtitle="Ultimi mesi disponibili">
+              {summaryQuery.data.monthly_breakdown.length ? (
+                <div className="list">
+                  {summaryQuery.data.monthly_breakdown.map((month) => (
+                    <div key={month.month} className="list-item">
+                      <div>
+                        <div className="list-item__title">{month.month}</div>
+                        <div className="list-item__meta">{formatCurrencyEur(month.estimated_cost_eur)} stimati</div>
+                      </div>
+                      <StatusBadge
+                        tone="neutral"
+                        label={`${formatNumber(month.total_energy_kwh, { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kWh`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="Andamento non disponibile" message="Non ci sono dati mensili nel periodo selezionato." />
+              )}
+            </Surface>
+          </div>
+
           <ResidentQueueCard />
         </div>
       ) : null}

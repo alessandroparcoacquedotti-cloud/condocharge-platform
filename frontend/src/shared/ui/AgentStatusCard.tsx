@@ -1,5 +1,5 @@
 import type { AgentStatusResponse } from "../api/types";
-import { formatAgeFromNow, formatDateTime } from "./components";
+import { StatusBadge, formatAgeFromNow, formatDateTime } from "./components";
 
 function getHealthLabel(healthColor: string, online: boolean) {
   if (healthColor === "green") return "Operativo";
@@ -17,60 +17,68 @@ export function AgentStatusCard(props: { status: AgentStatusResponse }) {
         : "is-red";
 
   return (
-    <div className="card" style={{ gridColumn: "span 5" }}>
-      <div className="card-title">Stato agente</div>
-      <div style={{ display: "grid", gap: 12 }}>
+    <div className="card hero-card" style={{ gridColumn: "span 5" }}>
+      <div className="surface__header">
+        <div className="stack" style={{ gap: 4 }}>
+          <h2 className="surface__title">Stato agente</h2>
+          <p className="surface__subtitle">Telemetria live del servizio di raccolta dati</p>
+        </div>
+        <StatusBadge
+          tone={status.health_color === "green" ? "ok" : status.health_color === "yellow" ? "warn" : "danger"}
+          label={getHealthLabel(status.health_color, status.online)}
+        />
+      </div>
+      <div className="stack">
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div className="row">
             <span aria-label={`agent-${status.health_color}`} className={`status-dot ${statusClass}`} />
-            <div style={{ fontWeight: 800 }}>{status.online ? "Agente online" : "Agente offline"}</div>
+            <div style={{ fontWeight: 800, color: "var(--text-strong)" }}>{status.online ? "Agente online" : "Agente offline"}</div>
           </div>
-          <span className={`pill ${status.health_color === "green" ? "is-ok" : status.health_color === "yellow" ? "is-warn" : "is-danger"}`}>
-            {getHealthLabel(status.health_color, status.online)}
-          </span>
-        </div>
-
-        <div className="row">
-          <span className="pill">
-            Agent ID: <span className="muted">{status.agent_id ?? "-"}</span>
-          </span>
           <span className="pill">
             Heartbeat: <span className="muted">{formatAgeFromNow(status.last_heartbeat)}</span>
           </span>
         </div>
 
-        <div style={{ display: "grid", gap: 8 }}>
-          <div className="row">
-            <span className="pill">
-              Ultimo heartbeat: <span className="muted">{formatDateTime(status.last_heartbeat)}</span>
-            </span>
-            <span className="pill">
-              Ultimo aggiornamento colonnine: <span className="muted">{formatDateTime(status.last_station_update)}</span>
-            </span>
+        <div className="detail-grid">
+          <div className="detail-card kv">
+            <div className="kv__label">Agent ID</div>
+            <div className="kv__value">{status.agent_id ?? "-"}</div>
           </div>
-          <div className="row">
-            <span className="pill">
-              Ultimo import sessioni: <span className="muted">{formatDateTime(status.last_session_import)}</span>
-            </span>
+          <div className="detail-card kv">
+            <div className="kv__label">Ultimo heartbeat</div>
+            <div className="kv__value">{formatDateTime(status.last_heartbeat)}</div>
+          </div>
+          <div className="detail-card kv">
+            <div className="kv__label">Ultimo aggiornamento colonnine</div>
+            <div className="kv__value">{formatDateTime(status.last_station_update)}</div>
+          </div>
+          <div className="detail-card kv">
+            <div className="kv__label">Ultimo import sessioni</div>
+            <div className="kv__value">{formatDateTime(status.last_session_import)}</div>
           </div>
         </div>
 
-        <div className="row">
-          <span className="pill">
-            Heartbeat count: <span className="muted">{status.heartbeat_count}</span>
-          </span>
-          <span className="pill">
-            Polling count: <span className="muted">{status.polling_count}</span>
-          </span>
-          <span className="pill">
-            Import count: <span className="muted">{status.import_count}</span>
-          </span>
-          <span className="pill">
-            Retry count: <span className="muted">{status.retry_count}</span>
-          </span>
-          <span className="pill">
-            Failure count: <span className="muted">{status.failure_count}</span>
-          </span>
+        <div className="list">
+          <div className="list-item">
+            <div className="list-item__title">Heartbeat count:</div>
+            <div className="list-item__title">{status.heartbeat_count}</div>
+          </div>
+          <div className="list-item">
+            <div className="list-item__title">Polling count:</div>
+            <div className="list-item__title">{status.polling_count}</div>
+          </div>
+          <div className="list-item">
+            <div className="list-item__title">Import count:</div>
+            <div className="list-item__title">{status.import_count}</div>
+          </div>
+          <div className="list-item">
+            <div className="list-item__title">Retry count:</div>
+            <div className="list-item__title">{status.retry_count}</div>
+          </div>
+          <div className="list-item">
+            <div className="list-item__title">Failure count:</div>
+            <div className="list-item__title">{status.failure_count}</div>
+          </div>
         </div>
       </div>
     </div>

@@ -3,10 +3,12 @@ import { ReactNode } from "react";
 const LOCALE = "it-IT";
 const DISPLAY_TIMEZONE = "Europe/Rome";
 
+type Tone = "neutral" | "ok" | "warn" | "danger";
+
 export function PageHead(props: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
     <div className="page-head">
-      <div>
+      <div className="page-head__copy">
         <h1 className="page-title">{props.title}</h1>
         {props.subtitle ? <p className="page-subtitle">{props.subtitle}</p> : null}
       </div>
@@ -15,11 +17,74 @@ export function PageHead(props: { title: string; subtitle?: string; right?: Reac
   );
 }
 
+export function Surface(props: {
+  title?: string;
+  subtitle?: string;
+  aside?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={props.className ? `surface ${props.className}` : "surface"}>
+      {props.title || props.subtitle || props.aside ? (
+        <div className="surface__header">
+          <div className="stack" style={{ gap: 4 }}>
+            {props.title ? <h2 className="surface__title">{props.title}</h2> : null}
+            {props.subtitle ? <p className="surface__subtitle">{props.subtitle}</p> : null}
+          </div>
+          {props.aside ? <div className="row">{props.aside}</div> : null}
+        </div>
+      ) : null}
+      {props.children}
+    </section>
+  );
+}
+
+export function MetricCard(props: {
+  label: string;
+  value: ReactNode;
+  meta?: ReactNode;
+  icon?: string;
+  accent?: boolean;
+  className?: string;
+}) {
+  const classes = ["card", "metric-card"];
+  if (props.accent) classes.push("metric-card--accent");
+  if (props.className) classes.push(props.className);
+  return (
+    <section className={classes.join(" ")}>
+      <div className="metric-card__top">
+        <div className="metric-card__label">{props.label}</div>
+        {props.icon ? <div className="metric-card__icon" aria-hidden="true">{props.icon}</div> : null}
+      </div>
+      <div className="metric-card__value">{props.value}</div>
+      {props.meta ? <div className="metric-card__meta">{props.meta}</div> : null}
+    </section>
+  );
+}
+
+export function StatusBadge(props: { label: ReactNode; tone?: Tone }) {
+  const tone = props.tone ?? "neutral";
+  return <span className={`status-badge status-badge--${tone}`}>{props.label}</span>;
+}
+
 export function LoadingState(props: { label?: string }) {
   return (
-    <div className="row">
-      <div className="spinner" aria-hidden="true" />
-      <div className="muted">{props.label ?? "Caricamento…"}</div>
+    <div className="loading-state" role="status" aria-live="polite">
+      <div className="loading-state__row">
+        <div className="spinner" aria-hidden="true" />
+        <div className="muted">{props.label ?? "Caricamento..."}</div>
+      </div>
+    </div>
+  );
+}
+
+export function EmptyState(props: { title?: string; message: string; action?: ReactNode }) {
+  return (
+    <div className="empty-state">
+      <div className="empty-state__title">{props.title ?? "Nessun dato disponibile"}</div>
+      <div className="empty-state__message">{props.message}</div>
+      {props.action ? <div className="row">{props.action}</div> : null}
     </div>
   );
 }
@@ -27,12 +92,10 @@ export function LoadingState(props: { label?: string }) {
 export function ErrorState(props: { title?: string; message: string; onRetry?: () => void }) {
   return (
     <div className="error-box">
-      <div style={{ fontWeight: 700, marginBottom: 6 }}>{props.title ?? "Errore"}</div>
-      <div className="muted" style={{ marginBottom: props.onRetry ? 10 : 0 }}>
-        {props.message}
-      </div>
+      <div className="error-box__title">{props.title ?? "Errore"}</div>
+      <div className="muted">{props.message}</div>
       {props.onRetry ? (
-        <button className="btn" type="button" onClick={props.onRetry}>
+        <button className="btn btn--secondary" type="button" onClick={props.onRetry}>
           Riprova
         </button>
       ) : null}

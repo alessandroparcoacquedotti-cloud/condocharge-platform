@@ -57,70 +57,80 @@ function AdminLayout() {
     <div className="app-shell">
       <header className="app-header">
         <div className="app-header__inner">
-          <div className="brand">
-            <div className="brand__title">CondoCharge</div>
-            <div className="brand__subtitle">Gestione ricariche condominiali</div>
-          </div>
+          <div className="shell-top">
+            <div className="shell-top__main">
+              <div className="brand">
+                <div className="brand__mark" aria-hidden="true">
+                  C
+                </div>
+                <div className="brand__copy">
+                  <div className="brand__eyebrow">Premium EV Control</div>
+                  <div className="brand__title">CondoCharge</div>
+                  <div className="brand__subtitle">Gestione ricariche condominiali</div>
+                </div>
+              </div>
+              <div className="shell-meta">
+                <div className="pill">{auth.user?.condominium.name ?? "-"}</div>
+                <div className="pill">{auth.user?.username ?? "-"}</div>
+                <div className="pill">{roleLabel(auth.user?.role)}</div>
+              </div>
+            </div>
 
-          <div className="row">
-            <div className="pill">{auth.user?.condominium.name ?? "-"}</div>
-            <div className="pill">{auth.user?.username ?? "-"}</div>
-            <div className="pill">{roleLabel(auth.user?.role)}</div>
-
-            <button className="nav-toggle btn" type="button" onClick={menu.toggle} aria-expanded={menu.open}>
-              Menu
-            </button>
-
-            <nav className={menu.open ? "nav nav--open" : "nav"} onClick={() => menu.close()}>
-              <NavLink to="/admin/panoramica" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                Panoramica
-              </NavLink>
-              <NavLink to="/admin/colonnine" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                Colonnine
-              </NavLink>
-              <NavLink to="/admin/ricariche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                Ricariche
-              </NavLink>
-              {role === "admin" ? (
-                <>
-                  <NavLink to="/admin/condomini" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                    Condomini
-                  </NavLink>
-                  <NavLink to="/admin/costi" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                    Costi
-                  </NavLink>
-                  <NavLink to="/admin/impostazioni" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                    Impostazioni
-                  </NavLink>
-
-                  <details className="nav-advanced" onClick={(e) => e.stopPropagation()}>
-                    <summary className="nav__link">Avanzate</summary>
-                    <div className="nav-advanced__items">
-                      <NavLink to="/admin/addebiti" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                        Addebiti
-                      </NavLink>
-                      <NavLink to="/admin/verifiche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                        Verifiche
-                      </NavLink>
-                      <NavLink to="/admin/notifiche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                        Notifiche
-                      </NavLink>
-                      <NavLink to="/admin/log-notifiche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                        Log notifiche
-                      </NavLink>
-                      <NavLink to="/admin/riepilogo" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                        Riepilogo
-                      </NavLink>
-                    </div>
-                  </details>
-                </>
-              ) : null}
-
-              <button className="btn" type="button" onClick={auth.logout}>
+            <div className="shell-top__actions">
+              <button className="nav-toggle btn btn--secondary" type="button" onClick={menu.toggle} aria-expanded={menu.open}>
+                Menu
+              </button>
+              <button className="btn btn--secondary" type="button" onClick={auth.logout}>
                 Esci
               </button>
-            </nav>
+            </div>
           </div>
+
+          <nav className={menu.open ? "nav nav--open" : "nav"} onClick={() => menu.close()}>
+            <NavLink to="/admin/panoramica" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+              Panoramica
+            </NavLink>
+            <NavLink to="/admin/colonnine" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+              Colonnine
+            </NavLink>
+            <NavLink to="/admin/ricariche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+              Ricariche
+            </NavLink>
+            {role === "admin" ? (
+              <>
+                <NavLink to="/admin/condomini" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+                  Condomini
+                </NavLink>
+                <NavLink to="/admin/costi" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+                  Costi
+                </NavLink>
+                <NavLink to="/admin/impostazioni" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+                  Impostazioni
+                </NavLink>
+
+                <details className="nav-advanced" onClick={(e) => e.stopPropagation()}>
+                  <summary className="nav__link">Avanzate</summary>
+                  <div className="nav-advanced__items">
+                    <NavLink to="/admin/addebiti" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+                      Addebiti
+                    </NavLink>
+                    <NavLink to="/admin/verifiche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+                      Verifiche
+                    </NavLink>
+                    <NavLink to="/admin/notifiche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+                      Notifiche
+                    </NavLink>
+                    <NavLink to="/admin/log-notifiche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+                      Log notifiche
+                    </NavLink>
+                    <NavLink to="/admin/riepilogo" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+                      Riepilogo
+                    </NavLink>
+                  </div>
+                </details>
+              </>
+            ) : null}
+          </nav>
         </div>
       </header>
 
@@ -138,46 +148,54 @@ function ResidentLayout() {
     <div className="app-shell">
       <header className="app-header">
         <div className="app-header__inner">
-          <div className="brand">
-            <div className="brand__title">CondoCharge</div>
-            <div className="brand__subtitle">Area Condomini</div>
-          </div>
+          <div className="shell-top">
+            <div className="shell-top__main">
+              <div className="brand">
+                <div className="brand__mark" aria-hidden="true">
+                  C
+                </div>
+                <div className="brand__copy">
+                  <div className="brand__eyebrow">Mobile Charging</div>
+                  <div className="brand__title">CondoCharge</div>
+                  <div className="brand__subtitle">Esperienza residente</div>
+                </div>
+              </div>
+              <div className="shell-meta">
+                <div className="pill">{auth.user?.condominium.name ?? "-"}</div>
+                <div className="pill">{auth.user?.username ?? "-"}</div>
+              </div>
+            </div>
 
-          <div className="row">
-            <div className="pill">{auth.user?.condominium.name ?? "-"}</div>
-            <div className="pill">{auth.user?.username ?? "-"}</div>
-
-            <button className="nav-toggle btn" type="button" onClick={menu.toggle} aria-expanded={menu.open}>
-              Menu
-            </button>
-
-            <nav className={menu.open ? "nav nav--open" : "nav"} onClick={() => menu.close()}>
-              <NavLink
-                to="/resident/stato-colonnine"
-                className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}
-              >
-                Stato colonnine
-              </NavLink>
-              <NavLink to="/resident/ricariche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                Le mie ricariche
-              </NavLink>
-              <NavLink to="/resident/consumi" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                I miei consumi
-              </NavLink>
-              <NavLink to="/resident/spese" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                Le mie spese
-              </NavLink>
-              <NavLink to="/resident/notifiche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                Notifiche
-              </NavLink>
-              <NavLink to="/resident/profilo" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-                Profilo
-              </NavLink>
-              <button className="btn" type="button" onClick={auth.logout}>
+            <div className="shell-top__actions">
+              <button className="nav-toggle btn btn--secondary" type="button" onClick={menu.toggle} aria-expanded={menu.open}>
+                Menu
+              </button>
+              <button className="btn btn--secondary" type="button" onClick={auth.logout}>
                 Esci
               </button>
-            </nav>
+            </div>
           </div>
+
+          <nav className={menu.open ? "nav nav--open" : "nav"} onClick={() => menu.close()}>
+            <NavLink to="/resident/stato-colonnine" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+              Stato colonnine
+            </NavLink>
+            <NavLink to="/resident/ricariche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+              Le mie ricariche
+            </NavLink>
+            <NavLink to="/resident/consumi" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+              I miei consumi
+            </NavLink>
+            <NavLink to="/resident/spese" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+              Le mie spese
+            </NavLink>
+            <NavLink to="/resident/notifiche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+              Notifiche
+            </NavLink>
+            <NavLink to="/resident/profilo" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+              Profilo
+            </NavLink>
+          </nav>
         </div>
       </header>
 

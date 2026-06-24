@@ -3,7 +3,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { endpoints } from "../api/endpoints";
 import type { AdminQueueSettingsResponse } from "../api/types";
 import { useQuery } from "../hooks/useQuery";
-import { ErrorState, LoadingState, formatDateTime } from "./components";
+import { ErrorState, LoadingState, StatusBadge, Surface, formatDateTime } from "./components";
 
 export function AdminQueueSettingsCard() {
   const fetcher = useMemo(() => () => endpoints.adminQueueSettings(), []);
@@ -36,27 +36,33 @@ export function AdminQueueSettingsCard() {
   }
 
   return (
-    <div className="card" style={{ gridColumn: "span 6" }}>
-      <div className="card-title">Coda di attesa</div>
+    <Surface
+      title="Coda di attesa"
+      subtitle="Controllo manuale della coda residenti"
+      className="surface--accent"
+    >
       {query.loading ? <LoadingState label="Caricamento impostazioni coda…" /> : null}
       {query.error ? <ErrorState title="Impossibile caricare la coda" message={query.error} onRetry={query.refetch} /> : null}
       {saveError ? <ErrorState title="Aggiornamento non riuscito" message={saveError} /> : null}
       {query.data ? (
         <form className="auth-form" onSubmit={onSave}>
           <div className="muted">La coda e disattivata per default fino a validazione operativa.</div>
-          <div className="muted">Condomini in attesa: {query.data.waiting_count}</div>
-          <div className="muted">Ultimo aggiornamento: {formatDateTime(query.data.updated_at)}</div>
+          <div className="row">
+            <StatusBadge tone={queueEnabled ? "ok" : "warn"} label={queueEnabled ? "Coda attiva" : "Coda disattiva"} />
+            <StatusBadge tone="neutral" label={`Condomini in attesa: ${query.data.waiting_count}`} />
+            <StatusBadge tone="neutral" label={`Ultimo aggiornamento: ${formatDateTime(query.data.updated_at)}`} />
+          </div>
           <label className="row" style={{ justifyContent: "flex-start" }}>
             <input type="checkbox" checked={queueEnabled} onChange={(e) => setQueueEnabled(e.target.checked)} />
             <span>Abilita coda condominiale</span>
           </label>
           <div className="muted">Questa release abilita solo join, leave e posizione personale. Nessuna assegnazione automatica e attiva.</div>
-          <button className="btn" type="submit" disabled={saving}>
+          <button className="btn btn--primary touch-safe" type="submit" disabled={saving}>
             {saving ? "Salvataggio…" : "Salva coda"}
           </button>
           {saveMessage ? <div className="muted">{saveMessage}</div> : null}
         </form>
       ) : null}
-    </div>
+    </Surface>
   );
 }
