@@ -289,7 +289,10 @@ export default function ResidentStationsStatusPage() {
           {showFreeStationMessage ? (
             <div style={{ gridColumn: "span 12", marginBottom: "16px" }}>
               <Surface>
-                <StatusBadge tone="warn" label="È già disponibile almeno una colonnina. Non è possibile entrare in coda finché esiste una postazione libera." />
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <StatusBadge tone="ok" label="È già disponibile una colonnina." />
+                  <div style={{ fontSize: "14px", color: "#6b7280" }}>Puoi iniziare la ricarica senza entrare in coda.</div>
+                </div>
                 <button
                   className="btn btn--secondary touch-safe"
                   type="button"
@@ -348,7 +351,7 @@ export default function ResidentStationsStatusPage() {
             </div>
           ) : null}
           <div style={{ gridColumn: "span 12", marginTop: "24px" }}>
-            <Surface title="Prenotazione ricarica" subtitle="Se entrambe le colonnine sono occupate puoi entrare in coda e riceverai una notifica quando si libera una postazione.">
+            <Surface title="Prenotazione ricarica" subtitle="Se tutte le colonnine sono occupate puoi entrare in coda e ricevere una notifica quando si libera una postazione.">
               {!userInQueue ? (
                 <button
                   className="btn btn--primary touch-safe"
