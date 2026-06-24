@@ -11,6 +11,7 @@ import {
   PageHead,
   StatusBadge,
   Surface,
+  WallboxIcon,
   formatAgeFromNow,
   formatDateTime,
   formatKwhFromWh,
@@ -264,8 +265,9 @@ export default function ResidentStationsStatusPage() {
                     key={s.id}
                     className={`device-tile device-tile--${statusTone}`}       
                   >
-                    <div className="device-tile__title">{s.name ?? `Colonnina ${s.id}`}</div>
+                    <WallboxIcon className="device-tile__icon" />
                     <div className={`device-tile__status device-tile__status--${statusTone}`}>{statusLabel}</div>
+                    <div className="device-tile__title">{s.name ?? `Colonnina ${s.id}`}</div>
                     <div className="device-tile__meta">
                       {checkedAt ? formatAgeFromNow(checkedAt, now) : "Verifica in corso"}
                     </div>

@@ -5,6 +5,36 @@ const DISPLAY_TIMEZONE = "Europe/Rome";
 
 type Tone = "neutral" | "ok" | "warn" | "danger";
 
+export function WallboxIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 64 64"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      {/* Wallbox main body */}
+      <rect x="14" y="8" width="36" height="48" rx="6" fill="#14233d" />
+      <rect x="16" y="10" width="32" height="44" rx="5" fill="#ffffff" />
+      
+      {/* Cable/connector */}
+      <path
+        d="M44 36C48 36 50 34 50 30C50 26 48 24 44 24"
+        stroke="#14233d"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+      <circle cx="50" cy="30" r="4" fill="#14233d" />
+      
+      {/* Indicator light */}
+      <circle cx="32" cy="20" r="3" fill="#18a565" />
+      
+      {/* Socket outline */}
+      <rect x="24" y="32" width="16" height="12" rx="2" stroke="#14233d" strokeWidth="2" />
+    </svg>
+  );
+}
+
 export function PageHead(props: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
     <div className="page-head">

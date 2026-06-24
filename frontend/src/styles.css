@@ -562,25 +562,30 @@ textarea {
 .device-tile {
   appearance: none;
   width: 100%;
-  min-height: 180px;
+  min-height: 130px;
   border-radius: 20px;
-  padding: 28px 20px;
+  padding: 18px 16px;
   display: grid;
   place-items: center;
-  gap: 16px;
+  gap: 10px;
   text-align: center;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
 }
 
+.device-tile__icon {
+  width: 70px;
+  height: 70px;
+}
+
 .device-tile__title {
   color: var(--text-strong);
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 .device-tile__status {
-  font-size: 1.8rem;
+  font-size: 1.65rem;
   line-height: 1.1;
   font-weight: 800;
   letter-spacing: -0.03em;
@@ -975,9 +980,9 @@ tr:last-child td {
   }
 
   .device-tile {
-    min-height: 220px;
+    min-height: 160px;
     border-radius: 20px;
-    padding: 20px 16px;
+    padding: 18px 16px;
   }
 
   .pill,
