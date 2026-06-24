@@ -15,6 +15,7 @@ const ResidentStationsStatusPage = lazy(() => import("./pages/ResidentStationsSt
 const ResidentSessionsPage = lazy(() => import("./pages/ResidentSessionsPage"));
 const ResidentNotificationsPage = lazy(() => import("./pages/ResidentNotificationsPage"));
 const ResidentProfilePage = lazy(() => import("./pages/ResidentProfilePageTelegramV11"));
+const ResidentTelegramPage = lazy(() => import("./pages/ResidentProfilePage"));
 const ResidentChangePasswordPage = lazy(() => import("./pages/ResidentChangePasswordPage"));
 const InvitationPage = lazy(() => import("./pages/InvitationPage"));
 const AdminResidentsPage = lazy(() => import("./pages/AdminResidentsPage"));
@@ -64,8 +65,10 @@ function AdminLayout() {
                   C
                 </div>
                 <div className="brand__copy">
-                  <div className="brand__eyebrow">Premium EV Control</div>
-                  <div className="brand__title">CondoCharge</div>
+                  <div className="brand__title">
+                    <span className="brand-word brand-word--condo">Condo</span>{" "}
+                    <span className="brand-word brand-word--charge">Charge</span>
+                  </div>
                   <div className="brand__subtitle">Gestione ricariche condominiali</div>
                 </div>
               </div>
@@ -146,55 +149,46 @@ function ResidentLayout() {
   const menu = useMobileMenu();
   return (
     <div className="app-shell">
-      <header className="app-header">
+      <header className="app-header app-header--resident">
         <div className="app-header__inner">
-          <div className="shell-top">
-            <div className="shell-top__main">
-              <div className="brand">
-                <div className="brand__mark" aria-hidden="true">
-                  C
-                </div>
-                <div className="brand__copy">
-                  <div className="brand__eyebrow">Mobile Charging</div>
-                  <div className="brand__title">CondoCharge</div>
-                  <div className="brand__subtitle">Esperienza residente</div>
-                </div>
+          <div className="resident-header">
+            <div className="brand brand--compact">
+              <div className="brand__mark brand__mark--compact" aria-hidden="true">
+                C
               </div>
-              <div className="shell-meta">
-                <div className="pill">{auth.user?.condominium.name ?? "-"}</div>
-                <div className="pill">{auth.user?.username ?? "-"}</div>
+              <div className="brand__title brand__title--compact">
+                <span className="brand-word brand-word--condo">Condo</span>{" "}
+                <span className="brand-word brand-word--charge">Charge</span>
               </div>
             </div>
 
-            <div className="shell-top__actions">
-              <button className="nav-toggle btn btn--secondary" type="button" onClick={menu.toggle} aria-expanded={menu.open}>
-                Menu
-              </button>
-              <button className="btn btn--secondary" type="button" onClick={auth.logout}>
-                Esci
-              </button>
-            </div>
+            <button
+              className="icon-btn"
+              type="button"
+              onClick={menu.toggle}
+              aria-label="Menu"
+              aria-expanded={menu.open}
+            >
+              ☰
+            </button>
           </div>
 
           <nav className={menu.open ? "nav nav--open" : "nav"} onClick={() => menu.close()}>
             <NavLink to="/resident/stato-colonnine" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
               Stato colonnine
             </NavLink>
-            <NavLink to="/resident/ricariche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-              Le mie ricariche
+            <NavLink to="/resident/profilo" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+              Profilo
             </NavLink>
-            <NavLink to="/resident/consumi" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-              I miei consumi
-            </NavLink>
-            <NavLink to="/resident/spese" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-              Le mie spese
+            <NavLink to="/resident/telegram" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+              Telegram
             </NavLink>
             <NavLink to="/resident/notifiche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
               Notifiche
             </NavLink>
-            <NavLink to="/resident/profilo" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
-              Profilo
-            </NavLink>
+            <button className="nav__link" type="button" onClick={auth.logout}>
+              Esci
+            </button>
           </nav>
         </div>
       </header>
@@ -446,6 +440,18 @@ export default function App() {
                 <RequireRole allow={["resident"]}>
                   <RequirePasswordChanged>
                     <ResidentNotificationsPage />
+                  </RequirePasswordChanged>
+                </RequireRole>
+              </Suspense>
+            }
+          />
+          <Route
+            path="/resident/telegram"
+            element={
+              <Suspense fallback={<LoadingState label="Caricamento pagina…" />}>
+                <RequireRole allow={["resident"]}>
+                  <RequirePasswordChanged>
+                    <ResidentTelegramPage />
                   </RequirePasswordChanged>
                 </RequireRole>
               </Suspense>

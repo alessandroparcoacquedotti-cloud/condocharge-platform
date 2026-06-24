@@ -14,6 +14,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   const canSubmit = useMemo(() => username.trim() && password, [username, password]);
 
@@ -59,14 +60,15 @@ export default function LoginPage() {
               C
             </div>
             <div className="brand__copy">
-              <div className="brand__eyebrow">Premium EV App</div>
-              <div className="auth-title">CondoCharge</div>
+              <div className="auth-title">
+                <span className="brand-word brand-word--condo">Condo</span>{" "}
+                <span className="brand-word brand-word--charge">Charge</span>
+              </div>
             </div>
           </div>
-          <p className="auth-subtitle">Accedi per controllare disponibilita delle colonnine, ricariche e consumi in un'unica esperienza mobile.</p>
+          <p className="auth-subtitle">Stato colonnine e ricariche in tempo reale.</p>
           <div className="row">
             <span className="pill">{env.defaultCondominiumName}</span>
-            <span className="pill">Web app installabile</span>
           </div>
         </div>
 
@@ -98,6 +100,17 @@ export default function LoginPage() {
             {submitting ? "Accesso in corso…" : "Accedi"}
           </button>
         </form>
+
+        <div className="row" style={{ justifyContent: "space-between", marginTop: 12 }}>
+          <button className="btn btn--ghost touch-safe" type="button" onClick={() => setForgotOpen((v) => !v)}>
+            Password dimenticata?
+          </button>
+        </div>
+        {forgotOpen ? (
+          <div className="muted" style={{ marginTop: 8 }}>
+            Contatta l’amministratore del condominio per recuperare le credenziali.
+          </div>
+        ) : null}
       </div>
     </div>
   );

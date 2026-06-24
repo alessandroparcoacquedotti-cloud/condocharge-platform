@@ -73,7 +73,7 @@ export default function InvitationPage() {
       <div>
         <PageHead title="Invito non valido" subtitle="Il link potrebbe essere scaduto, gia usato o sostituito da un invito piu recente." />
         <div className="card" style={{ maxWidth: 560 }}>
-          <div className="muted">Chiedi all'amministratore di inviarti un nuovo invito CondoCharge.</div>
+          <div className="muted">Chiedi all'amministratore di inviarti un nuovo invito Condo Charge.</div>
         </div>
       </div>
     );

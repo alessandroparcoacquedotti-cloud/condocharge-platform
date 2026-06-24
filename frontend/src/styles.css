@@ -37,6 +37,7 @@ html {
 body {
   margin: 0;
   min-width: 320px;
+  overflow-x: hidden;
   background:
     radial-gradient(900px 340px at top center, rgba(22, 58, 112, 0.08) 0%, rgba(22, 58, 112, 0) 70%),
     linear-gradient(180deg, #f8fbff 0%, var(--bg) 28%, #eef3f9 100%);
@@ -150,9 +151,59 @@ textarea {
   letter-spacing: -0.02em;
 }
 
+.brand-word--condo {
+  color: var(--text-strong);
+}
+
+.brand-word--charge {
+  color: var(--accent-2);
+}
+
+.brand--compact {
+  gap: 10px;
+}
+
+.brand__mark--compact {
+  width: 34px;
+  height: 34px;
+  border-radius: 14px;
+  font-size: 16px;
+}
+
+.brand__title--compact {
+  font-size: 1.05rem;
+  letter-spacing: -0.03em;
+}
+
 .brand__subtitle {
   font-size: 0.88rem;
   color: var(--muted);
+}
+
+.resident-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.icon-btn {
+  appearance: none;
+  border: 1px solid rgba(219, 228, 240, 0.96);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-strong);
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+}
+
+.icon-btn:active {
+  transform: scale(0.98);
 }
 
 .shell-meta {
@@ -810,6 +861,27 @@ tr:last-child td {
   .nav.nav--open {
     display: flex;
   }
+
+.app-header--resident .nav {
+  display: none;
+  width: 100%;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.app-header--resident .nav.nav--open {
+  display: flex;
+}
+
+.app-header--resident .nav__link {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  min-height: 48px;
+}
 
   .nav__link,
   .nav-advanced > summary,

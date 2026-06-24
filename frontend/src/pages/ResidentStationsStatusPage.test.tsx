@@ -52,7 +52,7 @@ describe("ResidentStationsStatusPage", () => {
     await waitFor(() => expect(mocks.residentStationsStatus).toHaveBeenCalled());
     await waitFor(() => expect(mocks.residentStationsOccupancy).toHaveBeenCalled());
     expect(screen.getByText("Garage A")).toBeInTheDocument();
-    expect(screen.getByText(/FREE/)).toBeInTheDocument();
-    expect(screen.queryByText(/UNAVAILABLE/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("Libera").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Non disponibile")).not.toBeInTheDocument();
   });
 });

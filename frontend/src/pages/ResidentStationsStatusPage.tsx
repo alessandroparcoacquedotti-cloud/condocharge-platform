@@ -7,7 +7,6 @@ import {
   EmptyState,
   ErrorState,
   LoadingState,
-  MetricCard,
   PageHead,
   StatusBadge,
   Surface,
@@ -31,22 +30,22 @@ function normalizeStatus(value: string | null | undefined) {
 
 function occupancyBadge(computed: string | null | undefined, opts: { checking: boolean }) {
   const s = (computed ?? "").toLowerCase();
-  if (s === "busy" || s === "charging" || s === "occupied") return { label: "🔴 BUSY", tone: "is-danger" as const };
+  if (s === "busy" || s === "charging" || s === "occupied") return { label: "In uso", tone: "is-danger" as const };
   if (s === "unavailable" || s === "offline" || s === "faulted" || s === "unknown" || s === "unreachable" || s === "degraded") {
-    return { label: "⚫ UNAVAILABLE", tone: "is-danger" as const };
+    return { label: "Non disponibile", tone: "is-danger" as const };
   }
-  if (opts.checking) return { label: "🟡 CHECKING STATUS", tone: "" as const };
-  return { label: "🟢 FREE", tone: "is-ok" as const };
+  if (opts.checking) return { label: "Verifica in corso", tone: "is-warn" as const };
+  return { label: "Libera", tone: "is-ok" as const };
 }
 
 function occupancyLabel(computed: string | null | undefined, opts: { checking: boolean }) {
   const s = (computed ?? "").toLowerCase();
-  if (s === "busy" || s === "charging" || s === "occupied") return "Occupata";
+  if (s === "busy" || s === "charging" || s === "occupied") return "In uso";
   if (s === "unavailable" || s === "offline" || s === "faulted" || s === "unknown" || s === "unreachable" || s === "degraded") {
     return "Non disponibile";
   }
   if (opts.checking) return "Verifica in corso";
-  return "Disponibile";
+  return "Libera";
 }
 
 function resolveDisplayedStatus(
@@ -103,50 +102,19 @@ export default function ResidentStationsStatusPage() {
     return { total: items.length, free, busy, unavailable };
   }, [occupancyById, query.data]);
 
-  const openProfile = () => {
-    window.location.assign("/resident/profilo");
-  };
-
   return (
     <div>
-      <PageHead
-        title="Stato colonnine"
-        subtitle="Vista mobile immediata su disponibilita, aggiornamenti live e ultima attivita"
-        right={
-          <div className="section-actions">
-            <button className="btn btn--secondary touch-safe" type="button" onClick={openProfile}>
-              Telegram e profilo
-            </button>
-            <button className="btn btn--primary touch-safe" type="button" onClick={() => occupancyQuery.refetch()}>
-              Aggiorna ora
-            </button>
-          </div>
-        }
-      />
+      <PageHead title="Stato colonnine" subtitle="Disponibilita in tempo reale e ultimo aggiornamento" />
 
       {query.loading ? <LoadingState label="Caricamento colonnine…" /> : null}
       {query.error ? <ErrorState title="Impossibile caricare lo stato colonnine" message={query.error} onRetry={query.refetch} /> : null}
 
       {query.data ? (
         <div className="grid">
-          <div style={{ gridColumn: "span 12" }}>
-            <Surface
-              title="Disponibilita in tempo reale"
-              subtitle="Colpo d'occhio rapido prima di scendere in garage"
-              className="surface--accent hero-card"
-            >
-              <div className="grid">
-                <MetricCard label="Disponibili" value={stats.free} meta="Pronte all'uso" icon="EV" accent />
-                <MetricCard label="In uso" value={stats.busy} meta="Occupate o in carica" icon="BUSY" />
-                <MetricCard label="Non disponibili" value={stats.unavailable} meta="Offline o non raggiungibili" icon="OFF" />
-                <MetricCard
-                  label="Ultimo refresh"
-                  value={occupancyQuery.refreshing ? "Live" : "OK"}
-                  meta={`Stazioni viste: ${stats.total}`}
-                  icon="NOW"
-                />
-              </div>
-            </Surface>
+          <div style={{ gridColumn: "span 12", display: "flex", justifyContent: "flex-end" }}>
+            <button className="btn btn--primary touch-safe" type="button" onClick={() => occupancyQuery.refetch()}>
+              Aggiorna
+            </button>
           </div>
 
           {query.data.items.map((s) => {
@@ -165,15 +133,16 @@ export default function ResidentStationsStatusPage() {
               <div key={s.id} className="card station-card" style={{ gridColumn: "span 6" }}>
                 <div className="station-card__head">
                   <div>
-                    <h2 className="station-card__title">{s.name ?? `Stazione #${s.id}`}</h2>
+                    <h2 className="station-card__title">{s.name ?? `Colonnina #${s.id}`}</h2>
                     <div className="station-card__subtitle">Ultimo aggiornamento dati: {formatDateTime(s.last_sync_at)}</div>
                     <div className="station-card__subtitle">
-                      {checkedAt ? `${formatAgeFromNow(checkedAt, now)} (${formatDateTime(checkedAt)})` : "🟡 CHECKING STATUS…"}
+                      {checkedAt ? `${formatAgeFromNow(checkedAt, now)} (${formatDateTime(checkedAt)})` : "Verifica in corso"}
                     </div>
                   </div>
-                  <span className={badge.tone ? `status-badge status-badge--${badge.tone === "is-ok" ? "ok" : badge.tone === "is-danger" ? "danger" : "warn"}` : "status-badge status-badge--neutral"}>
-                    {badge.label}
-                  </span>
+                  <StatusBadge
+                    tone={badge.tone === "is-ok" ? "ok" : badge.tone === "is-danger" ? "danger" : badge.tone === "is-warn" ? "warn" : "neutral"}
+                    label={badge.label}
+                  />
                 </div>
 
                 <div className="detail-grid">
@@ -196,8 +165,8 @@ export default function ResidentStationsStatusPage() {
                 </div>
 
                 <div className="row">
-                  <StatusBadge tone="neutral" label={checkedAt ? formatDateTime(checkedAt) : "In aggiornamento"} />
-                  <StatusBadge tone={isStale ? "warn" : "ok"} label={isStale ? "Dati da verificare" : "Dati freschi"} />
+                  <StatusBadge tone="neutral" label={checkedAt ? formatDateTime(checkedAt) : "Verifica in corso"} />
+                  <StatusBadge tone={isStale ? "warn" : "ok"} label={isStale ? "Ultimo aggiornamento non recente" : "Aggiornato"} />
                 </div>
               </div>
             );
@@ -208,14 +177,19 @@ export default function ResidentStationsStatusPage() {
               <EmptyState
                 title="Nessuna colonnina disponibile"
                 message="Quando una stazione verra configurata qui comparira il suo stato in tempo reale."
-                action={
-                  <button className="btn btn--secondary touch-safe" type="button" onClick={openProfile}>
-                    Apri profilo
-                  </button>
-                }
               />
             </div>
           ) : null}
+
+          <div style={{ gridColumn: "span 12" }}>
+            <Surface title="Riepilogo" subtitle="Numero di colonnine per stato (solo dopo la lista)">
+              <div className="row">
+                <StatusBadge tone="ok" label={`Libere: ${stats.free}`} />
+                <StatusBadge tone="danger" label={`In uso: ${stats.busy}`} />
+                <StatusBadge tone="warn" label={`Non disponibili: ${stats.unavailable}`} />
+              </div>
+            </Surface>
+          </div>
         </div>
       ) : null}
     </div>

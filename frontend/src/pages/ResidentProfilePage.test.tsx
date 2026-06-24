@@ -61,7 +61,7 @@ describe("ResidentProfilePage", () => {
     });
   });
 
-  it("renders Telegram status and notification toggles", async () => {
+  it("renders username, contacts, and change password action", async () => {
     render(
       <MemoryRouter>
         <ResidentProfilePage />
@@ -69,12 +69,10 @@ describe("ResidentProfilePage", () => {
     );
 
     await waitFor(() => expect(mocks.residentProfile).toHaveBeenCalled());
-    expect(screen.getByText("Telegram")).toBeInTheDocument();
-    expect(screen.getByText("Collegato")).toBeInTheDocument();
-    expect(screen.getByText("Colonnina occupata")).toBeInTheDocument();
-    expect(screen.getByText("Agente offline")).toBeInTheDocument();
-    expect(screen.getByText("Agente ripristinato")).toBeInTheDocument();
-    expect(screen.getByText("Genera link Telegram")).toBeInTheDocument();
-    expect(screen.getByText((content) => content.includes("/help") && content.includes("/status") && content.includes("/test"))).toBeInTheDocument();
+    expect(screen.getByText("Profilo")).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes("Username:") && content.includes("resident"))).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByDisplayValue("alice@example.com")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByDisplayValue("123")).toBeInTheDocument());
+    expect(screen.getByText("Cambia password")).toBeInTheDocument();
   });
 });
