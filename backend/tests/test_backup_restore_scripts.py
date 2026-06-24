@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -214,8 +215,12 @@ def _run_powershell_script(
     env["FAKE_RAILWAY_VOLUME_ROOT"] = str(volume_root)
     env["FAKE_RAILWAY_STATE_ROOT"] = str(state_root)
 
+    pwsh = shutil.which("pwsh") or shutil.which("powershell")
+    if pwsh is None:
+        raise RuntimeError("PowerShell executable not found (expected pwsh or powershell)")
+
     command = [
-        "powershell",
+        pwsh,
         "-NoProfile",
         "-ExecutionPolicy",
         "Bypass",
