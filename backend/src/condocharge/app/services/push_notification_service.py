@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# mypy: disable-error-code=import-untyped
 import hashlib
 import json
 from collections import defaultdict
@@ -9,16 +10,16 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from pywebpush import WebPushException, webpush
-from sqlalchemy import and_, func, not_, or_, select
+from sqlalchemy import not_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from condocharge.app.services.queue_service import QueueService
 from condocharge.app.services.resident_notification_service import (
-    LiveStationAvailabilityFetcher,
     NOTIFICATION_TYPE_CHARGING_COMPLETED,
     NOTIFICATION_TYPE_STATION_AVAILABLE,
+    LiveStationAvailabilityFetcher,
     StationAvailabilitySnapshot,
 )
 from condocharge.app.services.telegram_notification_service import (
@@ -26,11 +27,14 @@ from condocharge.app.services.telegram_notification_service import (
 )
 from condocharge.core.config import Settings
 from condocharge.models.charging import AgentState, ChargingSession, ChargingStation
-from condocharge.models.queue import ChargingQueueEntry, QUEUE_ENTRY_STATUS_OFFERED, QUEUE_ENTRY_STATUS_WAITING
+from condocharge.models.queue import (
+    QUEUE_ENTRY_STATUS_OFFERED,
+    QUEUE_ENTRY_STATUS_WAITING,
+    ChargingQueueEntry,
+)
 from condocharge.models.tenancy import (
     AppUser,
     AppUserRole,
-    Condominium,
     PushSubscription,
     ResidentNotificationHistory,
     ResidentNotificationPreferences,
@@ -73,7 +77,9 @@ class PushNotificationService:
         p256dh: str,
         auth: str,
     ) -> tuple[bool, int]:
-        row = self._db.scalar(select(PushSubscription).where(PushSubscription.endpoint == endpoint).limit(1))
+        row = self._db.scalar(
+            select(PushSubscription).where(PushSubscription.endpoint == endpoint).limit(1)
+        )
         if row is None:
             row = PushSubscription(
                 user_id=user.id,
@@ -125,13 +131,20 @@ class PushNotificationService:
             return PushDeliveryResult(status=STATUS_SENT, delivered_count=delivered)
         if delivered > 0:
             return PushDeliveryResult(status=STATUS_PREVIEW, delivered_count=delivered)
-        return PushDeliveryResult(status=STATUS_FAILED if active_count > 0 else STATUS_NOT_SUBSCRIBED, delivered_count=0)
+        return PushDeliveryResult(
+            status=STATUS_FAILED if active_count > 0 else STATUS_NOT_SUBSCRIBED, delivered_count=0
+        )
 
-    def list_subscribed_residents(self, *, condominium_id: int, notification_type: str) -> list[AppUser]:
+    def list_subscribed_residents(
+        self, *, condominium_id: int, notification_type: str
+    ) -> list[AppUser]:
         query = (
             select(AppUser)
             .join(PushSubscription, PushSubscription.user_id == AppUser.id)
-            .outerjoin(ResidentNotificationPreferences, ResidentNotificationPreferences.app_user_id == AppUser.id)
+            .outerjoin(
+                ResidentNotificationPreferences,
+                ResidentNotificationPreferences.app_user_id == AppUser.id,
+            )
             .where(AppUser.condominium_id == condominium_id)
             .where(AppUser.role == AppUserRole.RESIDENT.value)
             .where(AppUser.is_active == 1)
@@ -139,7 +152,9 @@ class PushNotificationService:
         )
         preference_clause = self._resident_preference_clause(notification_type=notification_type)
         if preference_clause is not None:
-            query = query.where(or_(ResidentNotificationPreferences.id.is_(None), preference_clause))
+            query = query.where(
+                or_(ResidentNotificationPreferences.id.is_(None), preference_clause)
+            )
         return list(self._db.scalars(query.order_by(AppUser.id.asc()).distinct()).all())
 
     def list_subscribed_admins(self, *, condominium_id: int) -> list[AppUser]:
@@ -177,7 +192,9 @@ class PushNotificationService:
             now=observed_at,
         ):
             return 0
-        if self._resident_station_available_cooldown_active(resident_id=resident.id, now=observed_at):
+        if self._resident_station_available_cooldown_active(
+            resident_id=resident.id, now=observed_at
+        ):
             return 0
         return self._deliver_to_user(
             condominium_id=condominium_id,
@@ -279,11 +296,14 @@ class PushNotificationService:
             subscription_dedupe_key = (
                 f"{dedupe_key}:subscription:{self._subscription_key(subscription.endpoint)}"
             )
-            if self._existing_notification(
-                condominium_id=condominium_id,
-                notification_type=notification_type,
-                dedupe_key=subscription_dedupe_key,
-            ) is not None:
+            if (
+                self._existing_notification(
+                    condominium_id=condominium_id,
+                    notification_type=notification_type,
+                    dedupe_key=subscription_dedupe_key,
+                )
+                is not None
+            ):
                 continue
 
             if not self._settings.web_push_enabled:
@@ -422,9 +442,12 @@ class PushNotificationService:
 
     def _resident_preference_clause(self, *, notification_type: str) -> ColumnElement[bool] | None:
         mapping: dict[str, ColumnElement[bool]] = {
-            NOTIFICATION_TYPE_STATION_AVAILABLE: ResidentNotificationPreferences.station_available == 1,
-            NOTIFICATION_TYPE_CHARGING_COMPLETED: ResidentNotificationPreferences.charging_completed == 1,
-            NOTIFICATION_TYPE_QUEUE_NEXT_IN_LINE: ResidentNotificationPreferences.station_available == 1,
+            NOTIFICATION_TYPE_STATION_AVAILABLE: ResidentNotificationPreferences.station_available
+            == 1,
+            NOTIFICATION_TYPE_CHARGING_COMPLETED: ResidentNotificationPreferences.charging_completed
+            == 1,
+            NOTIFICATION_TYPE_QUEUE_NEXT_IN_LINE: ResidentNotificationPreferences.station_available
+            == 1,
         }
         return mapping.get(notification_type)
 
@@ -442,23 +465,39 @@ class PushNotificationService:
                 select(ResidentNotificationHistory.id)
                 .where(ResidentNotificationHistory.condominium_id == condominium_id)
                 .where(ResidentNotificationHistory.channel == CHANNEL_WEB_PUSH)
-                .where(ResidentNotificationHistory.notification_type == NOTIFICATION_TYPE_STATION_AVAILABLE)
+                .where(
+                    ResidentNotificationHistory.notification_type
+                    == NOTIFICATION_TYPE_STATION_AVAILABLE
+                )
                 .where(ResidentNotificationHistory.created_at >= cutoff)
-                .where(ResidentNotificationHistory.dedupe_key.like(f"station:{station_id}:transition:%"))
-                .where(not_(ResidentNotificationHistory.dedupe_key.like(f"{transition_key}:resident:%")))
+                .where(
+                    ResidentNotificationHistory.dedupe_key.like(
+                        f"station:{station_id}:transition:%"
+                    )
+                )
+                .where(
+                    not_(
+                        ResidentNotificationHistory.dedupe_key.like(f"{transition_key}:resident:%")
+                    )
+                )
                 .limit(1)
             )
             is not None
         )
 
-    def _resident_station_available_cooldown_active(self, *, resident_id: int, now: datetime) -> bool:
+    def _resident_station_available_cooldown_active(
+        self, *, resident_id: int, now: datetime
+    ) -> bool:
         cutoff = now - timedelta(minutes=self._settings.notification_resident_cooldown_minutes)
         return (
             self._db.scalar(
                 select(ResidentNotificationHistory.id)
                 .where(ResidentNotificationHistory.resident_app_user_id == resident_id)
                 .where(ResidentNotificationHistory.channel == CHANNEL_WEB_PUSH)
-                .where(ResidentNotificationHistory.notification_type == NOTIFICATION_TYPE_STATION_AVAILABLE)
+                .where(
+                    ResidentNotificationHistory.notification_type
+                    == NOTIFICATION_TYPE_STATION_AVAILABLE
+                )
                 .where(ResidentNotificationHistory.created_at >= cutoff)
                 .limit(1)
             )
@@ -528,7 +567,9 @@ class PushStationNotificationPoller:
                     if previous_raw is not None
                     else None
                 )
-                current_status = PushNotificationService._normalize_transition_status(snapshot.computed_status)
+                current_status = PushNotificationService._normalize_transition_status(
+                    snapshot.computed_status
+                )
                 self._previous_statuses[snapshot.station_id] = current_status
                 if current_status == "available":
                     free_station_ids_by_condo[snapshot.condominium_id].append(snapshot.station_id)
@@ -543,9 +584,9 @@ class PushStationNotificationPoller:
                     station_id=snapshot.station_id,
                     observed_at=snapshot.observed_at,
                 )
-                if queue_service.is_queue_enabled(condominium_id=snapshot.condominium_id) and queue_service.has_active_entries(
+                if queue_service.is_queue_enabled(
                     condominium_id=snapshot.condominium_id
-                ):
+                ) and queue_service.has_active_entries(condominium_id=snapshot.condominium_id):
                     offered_entry = queue_service.get_offered_entry_for_station(
                         condominium_id=snapshot.condominium_id,
                         station_id=snapshot.station_id,
@@ -568,13 +609,16 @@ class PushStationNotificationPoller:
             now = datetime.now(tz=UTC)
             if self._queue_assignments_active(now=now):
                 for condominium_id, station_ids in free_station_ids_by_condo.items():
-                    if not station_ids or not queue_service.is_queue_enabled(condominium_id=condominium_id):
+                    if not station_ids or not queue_service.is_queue_enabled(
+                        condominium_id=condominium_id
+                    ):
                         continue
                     promoted_entries = queue_service.promote_waiting_entries(
                         condominium_id=condominium_id,
                         station_ids=station_ids,
                         reserved_at=now,
-                        reservation_expires_at=now + timedelta(
+                        reservation_expires_at=now
+                        + timedelta(
                             minutes=max(1, int(self._settings.queue_reservation_grace_minutes))
                         ),
                     )
@@ -603,13 +647,19 @@ class PushStationNotificationPoller:
         queue_service: QueueService,
     ) -> int:
         created = 0
-        active_entries = (
-            db.scalars(
-                select(ChargingQueueEntry)
-                .where(ChargingQueueEntry.status.in_([QUEUE_ENTRY_STATUS_WAITING, QUEUE_ENTRY_STATUS_OFFERED]))
-                .order_by(ChargingQueueEntry.condominium_id.asc(), ChargingQueueEntry.joined_at.asc(), ChargingQueueEntry.id.asc())
-            ).all()
-        )
+        active_entries = db.scalars(
+            select(ChargingQueueEntry)
+            .where(
+                ChargingQueueEntry.status.in_(
+                    [QUEUE_ENTRY_STATUS_WAITING, QUEUE_ENTRY_STATUS_OFFERED]
+                )
+            )
+            .order_by(
+                ChargingQueueEntry.condominium_id.asc(),
+                ChargingQueueEntry.joined_at.asc(),
+                ChargingQueueEntry.id.asc(),
+            )
+        ).all()
         first_active_by_condo: dict[int, ChargingQueueEntry] = {}
         for entry in active_entries:
             if not queue_service.is_queue_enabled(condominium_id=entry.condominium_id):
@@ -631,7 +681,11 @@ class PushStationNotificationPoller:
         return db.scalar(
             select(ChargingQueueEntry)
             .where(ChargingQueueEntry.condominium_id == condominium_id)
-            .where(ChargingQueueEntry.status.in_([QUEUE_ENTRY_STATUS_WAITING, QUEUE_ENTRY_STATUS_OFFERED]))
+            .where(
+                ChargingQueueEntry.status.in_(
+                    [QUEUE_ENTRY_STATUS_WAITING, QUEUE_ENTRY_STATUS_OFFERED]
+                )
+            )
             .order_by(ChargingQueueEntry.joined_at.asc(), ChargingQueueEntry.id.asc())
             .limit(1)
         )
@@ -674,7 +728,9 @@ class PushAgentStatusNotificationPoller:
                 self._previous_online[key] = is_online
                 if previous is None or previous == is_online or is_online:
                     continue
-                for admin_user in service.list_subscribed_admins(condominium_id=state.condominium_id):
+                for admin_user in service.list_subscribed_admins(
+                    condominium_id=state.condominium_id
+                ):
                     created += service.send_agent_offline(
                         condominium_id=state.condominium_id,
                         admin_user=admin_user,

@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import logging
 from threading import Event, Thread
+from typing import Protocol
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 
 from condocharge.api.router import api_router
-from condocharge.app.services.resident_notification_service import (
-    StationAvailabilityNotificationPoller,
-)
 from condocharge.app.services.push_notification_service import (
     PushAgentStatusNotificationPoller,
     PushStationNotificationPoller,
+)
+from condocharge.app.services.resident_notification_service import (
+    StationAvailabilityNotificationPoller,
 )
 from condocharge.app.services.telegram_notification_service import (
     TelegramAgentStatusNotificationPoller,
@@ -28,6 +29,10 @@ from condocharge.db.session import (
     sanitize_sqlite_path_for_logs,
 )
 from condocharge.models.tenancy import AppUser, Condominium
+
+
+class PollOnceCapable(Protocol):
+    def poll_once(self) -> int: ...
 
 
 def create_app() -> FastAPI:
@@ -56,7 +61,12 @@ def create_app() -> FastAPI:
         try:
             with SessionLocal() as db:
                 active_condominiums = int(
-                    db.scalar(select(func.count()).select_from(Condominium).where(Condominium.is_active == 1)) or 0
+                    db.scalar(
+                        select(func.count())
+                        .select_from(Condominium)
+                        .where(Condominium.is_active == 1)
+                    )
+                    or 0
                 )
                 active_users = int(
                     db.scalar(
@@ -111,13 +121,21 @@ def create_app() -> FastAPI:
             )
             push_station_thread = Thread(
                 target=_run_notification_poller,
-                args=(push_station_poller, push_stop_event, settings.notification_poll_interval_seconds),
+                args=(
+                    push_station_poller,
+                    push_stop_event,
+                    settings.notification_poll_interval_seconds,
+                ),
                 name="condocharge-push-station-poller",
                 daemon=True,
             )
             push_agent_thread = Thread(
                 target=_run_notification_poller,
-                args=(push_agent_poller, push_stop_event, settings.notification_poll_interval_seconds),
+                args=(
+                    push_agent_poller,
+                    push_stop_event,
+                    settings.notification_poll_interval_seconds,
+                ),
                 name="condocharge-push-agent-poller",
                 daemon=True,
             )
@@ -144,13 +162,21 @@ def create_app() -> FastAPI:
                 )
                 station_thread = Thread(
                     target=_run_notification_poller,
-                    args=(telegram_station_poller, telegram_stop_event, settings.notification_poll_interval_seconds),
+                    args=(
+                        telegram_station_poller,
+                        telegram_stop_event,
+                        settings.notification_poll_interval_seconds,
+                    ),
                     name="condocharge-telegram-station-poller",
                     daemon=True,
                 )
                 agent_thread = Thread(
                     target=_run_notification_poller,
-                    args=(telegram_agent_poller, telegram_stop_event, settings.notification_poll_interval_seconds),
+                    args=(
+                        telegram_agent_poller,
+                        telegram_stop_event,
+                        settings.notification_poll_interval_seconds,
+                    ),
                     name="condocharge-telegram-agent-poller",
                     daemon=True,
                 )
@@ -175,7 +201,9 @@ def create_app() -> FastAPI:
         if thread is not None:
             thread.join(timeout=5)
 
-        telegram_stop_event: Event | None = getattr(app.state, "telegram_notification_poller_stop_event", None)
+        telegram_stop_event: Event | None = getattr(
+            app.state, "telegram_notification_poller_stop_event", None
+        )
         station_thread: Thread | None = getattr(app.state, "telegram_station_poller_thread", None)
         agent_thread: Thread | None = getattr(app.state, "telegram_agent_poller_thread", None)
         if telegram_stop_event is not None:
@@ -185,7 +213,9 @@ def create_app() -> FastAPI:
         if agent_thread is not None:
             agent_thread.join(timeout=5)
 
-        push_stop_event: Event | None = getattr(app.state, "push_notification_poller_stop_event", None)
+        push_stop_event: Event | None = getattr(
+            app.state, "push_notification_poller_stop_event", None
+        )
         push_station_thread: Thread | None = getattr(app.state, "push_station_poller_thread", None)
         push_agent_thread: Thread | None = getattr(app.state, "push_agent_poller_thread", None)
         if push_stop_event is not None:
@@ -194,6 +224,7 @@ def create_app() -> FastAPI:
             push_station_thread.join(timeout=5)
         if push_agent_thread is not None:
             push_agent_thread.join(timeout=5)
+
     return app
 
 
@@ -201,7 +232,7 @@ app = create_app()
 
 
 def _run_notification_poller(
-    poller: object,
+    poller: PollOnceCapable,
     stop_event: Event,
     interval_seconds: int,
 ) -> None:
@@ -209,7 +240,7 @@ def _run_notification_poller(
     wait_seconds = max(interval_seconds, 1)
     while not stop_event.is_set():
         try:
-            getattr(poller, "poll_once")()
+            poller.poll_once()
         except Exception:
             logger.exception("Resident notification poller failed")
         stop_event.wait(wait_seconds)
