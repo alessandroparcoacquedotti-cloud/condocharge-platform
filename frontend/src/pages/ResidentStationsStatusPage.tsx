@@ -352,6 +352,9 @@ export default function ResidentStationsStatusPage() {
           ) : null}
           <div style={{ gridColumn: "span 12", marginTop: "24px" }}>
             <Surface title="Prenotazione ricarica" subtitle="Se tutte le colonnine sono occupate puoi entrare in coda e ricevere una notifica quando si libera una postazione.">
+              <div className="muted" style={{ marginBottom: 12 }}>
+                Le notifiche di disponibilita vengono inviate agli utenti in coda.
+              </div>
               {!userInQueue ? (
                 <button
                   className="btn btn--primary touch-safe"

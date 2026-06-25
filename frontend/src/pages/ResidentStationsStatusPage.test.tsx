@@ -7,12 +7,14 @@ import ResidentStationsStatusPage from "./ResidentStationsStatusPage";
 const mocks = vi.hoisted(() => ({
   residentStationsStatus: vi.fn(),
   residentStationsOccupancy: vi.fn(),
+  residentQueueStatus: vi.fn(),
 }));
 
 vi.mock("../shared/api/endpoints", () => ({
   endpoints: {
     residentStationsStatus: mocks.residentStationsStatus,
     residentStationsOccupancy: mocks.residentStationsOccupancy,
+    residentQueueStatus: mocks.residentQueueStatus,
   },
 }));
 
@@ -45,6 +47,14 @@ describe("ResidentStationsStatusPage", () => {
         },
       ],
     });
+    mocks.residentQueueStatus.mockResolvedValue({
+      queue_enabled: true,
+      in_queue: false,
+      position: null,
+      joined_at: null,
+      active_entry_id: null,
+      status: null,
+    });
   });
 
   it("keeps a fresh known agent available state when occupancy returns unavailable from live fallback", async () => {
@@ -59,9 +69,11 @@ describe("ResidentStationsStatusPage", () => {
 
     await waitFor(() => expect(mocks.residentStationsStatus).toHaveBeenCalled());
     await waitFor(() => expect(mocks.residentStationsOccupancy).toHaveBeenCalled());
+    await waitFor(() => expect(mocks.residentQueueStatus).toHaveBeenCalled());
     expect(screen.getByText("Garage A")).toBeInTheDocument();
     expect(screen.getAllByText("Libera").length).toBeGreaterThan(0);
     expect(screen.queryByText("Non disponibile")).not.toBeInTheDocument();
+    expect(screen.getByText("Le notifiche di disponibilita vengono inviate agli utenti in coda.")).toBeInTheDocument();
   });
 
   it("shows station details on the dedicated detail route", async () => {

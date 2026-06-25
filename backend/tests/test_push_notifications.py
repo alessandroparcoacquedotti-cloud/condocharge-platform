@@ -18,6 +18,7 @@ from condocharge.app.services.push_notification_service import (
 )
 from condocharge.app.services.resident_notification_service import (
     NOTIFICATION_TYPE_CHARGING_COMPLETED,
+  NOTIFICATION_TYPE_STATION_AVAILABLE,
     StationAvailabilitySnapshot,
 )
 from condocharge.core.config import Settings
@@ -270,6 +271,98 @@ def test_push_station_poller_notifies_first_waiting_resident() -> None:
         assert created == 1
         assert len(history) == 1
         assert history[0].status == "preview"
+    finally:
+        db.close()
+
+
+def test_push_station_available_notifies_only_first_in_queue() -> None:
+    session_factory = _build_session_factory()
+    db = session_factory()
+    try:
+        now = datetime.now(tz=UTC)
+        settings = Settings(notifications_enabled=True)
+        condo = _seed_condo(db)
+        queued_resident = _seed_user(db, condo=condo, username="queued", role=AppUserRole.RESIDENT.value)
+        non_queued_resident = _seed_user(db, condo=condo, username="nonqueued", role=AppUserRole.RESIDENT.value)
+        station = _seed_station(db, condo=condo)
+        _seed_push_subscription(db, user=queued_resident, endpoint="https://push.example/sub-queued")
+        _seed_push_subscription(db, user=non_queued_resident, endpoint="https://push.example/sub-nonqueued")
+        db.add(ChargingQueueSettings(condominium_id=condo.id, queue_enabled=1))
+        db.flush()
+        db.add(
+            ChargingQueueEntry(
+                condominium_id=condo.id,
+                resident_app_user_id=queued_resident.id,
+                status="waiting",
+                joined_at=now - timedelta(minutes=2),
+            )
+        )
+        db.commit()
+
+        poller = PushStationNotificationPoller(
+            db_factory=session_factory,
+            settings=settings,
+            occupancy_fetcher=SequenceOccupancyFetcher(
+                [
+                    [
+                        StationAvailabilitySnapshot(
+                            station_id=station.id,
+                            condominium_id=condo.id,
+                            computed_status="charging",
+                            observed_at=now - timedelta(minutes=1),
+                        )
+                    ],
+                    [
+                        StationAvailabilitySnapshot(
+                            station_id=station.id,
+                            condominium_id=condo.id,
+                            computed_status="available",
+                            observed_at=now,
+                        )
+                    ],
+                ]
+            ),
+        )
+
+        poller.poll_once()
+        created = poller.poll_once()
+
+        history = db.scalars(
+            select(ResidentNotificationHistory)
+            .where(ResidentNotificationHistory.notification_type == NOTIFICATION_TYPE_STATION_AVAILABLE)
+            .order_by(ResidentNotificationHistory.id.asc())
+        ).all()
+        assert created == 1
+        assert len(history) == 1
+        assert history[0].resident_app_user_id == queued_resident.id
+    finally:
+        db.close()
+
+
+def test_charging_completed_push_targets_only_session_resident() -> None:
+    session_factory = _build_session_factory()
+    db = session_factory()
+    try:
+        settings = Settings(notifications_enabled=True, notification_recency_minutes=30)
+        condo = _seed_condo(db)
+        resident_a = _seed_user(db, condo=condo, username="resident-a", role=AppUserRole.RESIDENT.value)
+        resident_b = _seed_user(db, condo=condo, username="resident-b", role=AppUserRole.RESIDENT.value)
+        station = _seed_station(db, condo=condo)
+        _seed_push_subscription(db, user=resident_a, endpoint="https://push.example/sub-a")
+        _seed_push_subscription(db, user=resident_b, endpoint="https://push.example/sub-b")
+        session = _seed_session(db, condo=condo, resident=resident_a, station=station)
+        service = PushNotificationService(db=db, settings=settings)
+
+        created = service.send_charging_completed(session=session, resident=resident_a, station=station)
+
+        history = db.scalars(
+            select(ResidentNotificationHistory)
+            .where(ResidentNotificationHistory.notification_type == NOTIFICATION_TYPE_CHARGING_COMPLETED)
+            .order_by(ResidentNotificationHistory.id.asc())
+        ).all()
+        assert created == 1
+        assert len(history) == 1
+        assert history[0].resident_app_user_id == resident_a.id
     finally:
         db.close()
 

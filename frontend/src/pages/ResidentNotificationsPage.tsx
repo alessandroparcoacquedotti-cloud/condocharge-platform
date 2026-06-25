@@ -1,13 +1,16 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { endpoints } from "../shared/api/endpoints";
-import type { ResidentNotificationPreferences, ResidentNotificationPreferencesUpdate } from "../shared/api/types";
+import type { ResidentNotificationPreferences, ResidentNotificationPreferencesUpdate, ResidentProfileResponse } from "../shared/api/types";
 import { useQuery } from "../shared/hooks/useQuery";
 import { ErrorState, LoadingState, PageHead, StatusBadge, Surface } from "../shared/ui";
+import * as pushService from "../shared/notifications/pushService";
 
 export default function ResidentNotificationsPage() {
   const fetcher = useMemo(() => () => endpoints.residentNotificationPreferences(), []);
   const query = useQuery<ResidentNotificationPreferences>(fetcher);
+  const profileFetcher = useMemo(() => () => endpoints.residentProfile(), []);
+  const profileQuery = useQuery<ResidentProfileResponse>(profileFetcher);
 
   const [values, setValues] = useState<ResidentNotificationPreferencesUpdate>({
     charging_completed: true,
@@ -20,6 +23,12 @@ export default function ResidentNotificationsPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+  const [pushMessage, setPushMessage] = useState<string | null>(null);
+  const [pushState, setPushState] = useState<pushService.BrowserPushState>("disabled");
+  const [pushDiag, setPushDiag] = useState<pushService.PushDiagnosticsSnapshot | null>(null);
+  const [pushDiagLoading, setPushDiagLoading] = useState(false);
 
   useEffect(() => {
     if (!query.data) return;
@@ -32,6 +41,45 @@ export default function ResidentNotificationsPage() {
       agent_recovered: query.data.agent_recovered,
     });
   }, [query.data]);
+
+  useEffect(() => {
+    if (!profileQuery.data) return;
+    void refreshPushState(profileQuery.data.push.subscribed);
+  }, [profileQuery.data]);
+
+  useEffect(() => {
+    void refreshPushDiagnostics();
+  }, []);
+
+  async function refreshPushDiagnostics() {
+    setPushDiagLoading(true);
+    try {
+      setPushDiag(await pushService.collectPushDiagnosticsSnapshot());
+    } finally {
+      setPushDiagLoading(false);
+    }
+  }
+
+  async function refreshPushState(serverSubscribed: boolean) {
+    try {
+      if (pushService.getNotificationPermissionState() === "granted") {
+        await pushService.syncExistingSubscription().catch(() => undefined);
+      }
+      setPushState(await pushService.resolveBrowserPushState(serverSubscribed));
+    } catch {
+      setPushState(serverSubscribed ? "active" : "disabled");
+    }
+  }
+
+  function pushStatusMeta() {
+    if (pushState === "unsupported") {
+      return { label: "Non supportate", tone: "warn" as const };
+    }
+    if (pushState === "active") {
+      return { label: "Attive", tone: "ok" as const };
+    }
+    return { label: "Disattivate", tone: "neutral" as const };
+  }
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
@@ -49,6 +97,48 @@ export default function ResidentNotificationsPage() {
     }
   }
 
+  async function enablePushNotifications() {
+    setPushError(null);
+    setPushMessage(null);
+    setPushLoading(true);
+    try {
+      await refreshPushDiagnostics();
+      const permission = await pushService.requestNotificationPermission();
+      await refreshPushDiagnostics();
+      if (permission !== "granted") {
+        setPushError("Permesso notifiche non concesso.");
+        await refreshPushState(false);
+        return;
+      }
+      await pushService.subscribeToPush();
+      await refreshPushDiagnostics();
+      setPushMessage("Notifiche push attivate.");
+      await profileQuery.refetch();
+      await refreshPushState(true);
+    } catch (err) {
+      setPushError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Impossibile attivare le notifiche push");
+    } finally {
+      setPushLoading(false);
+    }
+  }
+
+  async function disablePushNotifications() {
+    setPushError(null);
+    setPushMessage(null);
+    setPushLoading(true);
+    try {
+      await pushService.unsubscribeFromPush();
+      await refreshPushDiagnostics();
+      setPushMessage("Notifiche push disattivate.");
+      await profileQuery.refetch();
+      await refreshPushState(false);
+    } catch (err) {
+      setPushError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Impossibile disattivare le notifiche push");
+    } finally {
+      setPushLoading(false);
+    }
+  }
+
   return (
     <div>
       <PageHead title="Notifiche" subtitle="Scegli quali aggiornamenti ricevere" />
@@ -56,6 +146,8 @@ export default function ResidentNotificationsPage() {
       {query.loading ? <LoadingState label="Caricamento preferenze…" /> : null}
       {query.error ? <ErrorState title="Impossibile caricare le preferenze" message={query.error} onRetry={query.refetch} /> : null}
       {saveError ? <ErrorState title="Salvataggio non riuscito" message={saveError} /> : null}
+      {pushError ? <ErrorState title="Notifiche push" message={pushError} /> : null}
+      {pushMessage ? <div className="muted">{pushMessage}</div> : null}
 
       <div className="grid">
         <div style={{ gridColumn: "span 12" }}>
@@ -102,6 +194,100 @@ export default function ResidentNotificationsPage() {
               </button>
               {saveMessage ? <StatusBadge tone="ok" label={saveMessage} /> : null}
             </form>
+          </Surface>
+        </div>
+
+        <div style={{ gridColumn: "span 12" }}>
+          <Surface title="Notifiche push" subtitle="Le notifiche app arrivano anche quando Condo Charge e chiusa.">
+            {profileQuery.loading ? <LoadingState label="Verifica stato push..." /> : null}
+            {profileQuery.error ? (
+              <ErrorState title="Impossibile caricare lo stato push" message={profileQuery.error} onRetry={profileQuery.refetch} />
+            ) : null}
+
+            {profileQuery.data ? (
+              <div className="stack">
+                <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
+                  <StatusBadge tone={pushStatusMeta().tone} label={`Stato: ${pushStatusMeta().label}`} />
+                  <StatusBadge tone="neutral" label={`Dispositivi attivi: ${profileQuery.data.push.active_subscriptions}`} />
+                </div>
+
+                <div className="section-actions">
+                  <button
+                    className="btn btn--primary touch-safe"
+                    type="button"
+                    onClick={enablePushNotifications}
+                    disabled={pushLoading || pushState === "unsupported"}
+                  >
+                    {pushLoading ? "Attivazione..." : "Attiva notifiche"}
+                  </button>
+                  <button
+                    className="btn btn--secondary touch-safe"
+                    type="button"
+                    onClick={disablePushNotifications}
+                    disabled={pushLoading || pushState !== "active"}
+                  >
+                    {pushLoading ? "Disattivazione..." : "Disattiva notifiche"}
+                  </button>
+                </div>
+
+                <details className="card" style={{ marginTop: 8 }}>
+                  <summary className="card-title" style={{ cursor: "pointer" }}>
+                    Diagnostica push
+                  </summary>
+                  <div className="stack" style={{ paddingTop: 12 }}>
+                    <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
+                      <StatusBadge tone="neutral" label={`HTTPS: ${pushDiag?.isSecureContext ? "Sì" : "No"}`} />
+                      <StatusBadge
+                        tone="neutral"
+                        label={`Supporto push: ${pushDiag ? (pushDiag.pushSupported ? "Sì" : "No") : "…"}`}
+                      />
+                      <StatusBadge
+                        tone="neutral"
+                        label={`Permesso: ${pushDiag ? String(pushDiag.notificationPermissionState) : "…"}`}
+                      />
+                      <StatusBadge
+                        tone="neutral"
+                        label={`SW ready: ${pushDiag ? (pushDiag.serviceWorkerReadyResolved ? "Sì" : "No") : "…"}`}
+                      />
+                      <StatusBadge
+                        tone="neutral"
+                        label={`VAPID: ${pushDiag ? (pushDiag.vapidPublicKeyRuntimePresent ? pushDiag.vapidPublicKeyRuntimePrefix : "assente") : "…"}`}
+                      />
+                    </div>
+
+                    <div className="section-actions">
+                      <button className="btn btn--secondary touch-safe" type="button" onClick={refreshPushDiagnostics} disabled={pushDiagLoading}>
+                        {pushDiagLoading ? "Verifica..." : "Aggiorna diagnostica"}
+                      </button>
+                      <button
+                        className="btn btn--secondary touch-safe"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const text = JSON.stringify(pushDiag, null, 2);
+                            await navigator.clipboard.writeText(text);
+                            setPushMessage("Diagnostica copiata.");
+                          } catch {
+                            setPushError("Impossibile copiare la diagnostica.");
+                          }
+                        }}
+                        disabled={!pushDiag}
+                      >
+                        Copia
+                      </button>
+                    </div>
+
+                    {pushDiag ? (
+                      <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+                        {JSON.stringify(pushDiag, null, 2)}
+                      </pre>
+                    ) : (
+                      <div className="muted">Nessuna diagnostica disponibile.</div>
+                    )}
+                  </div>
+                </details>
+              </div>
+            ) : null}
           </Surface>
         </div>
       </div>

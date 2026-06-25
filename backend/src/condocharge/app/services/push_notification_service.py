@@ -26,7 +26,7 @@ from condocharge.app.services.telegram_notification_service import (
 )
 from condocharge.core.config import Settings
 from condocharge.models.charging import AgentState, ChargingSession, ChargingStation
-from condocharge.models.queue import ChargingQueueEntry, QUEUE_ENTRY_STATUS_WAITING
+from condocharge.models.queue import ChargingQueueEntry, QUEUE_ENTRY_STATUS_OFFERED, QUEUE_ENTRY_STATUS_WAITING
 from condocharge.models.tenancy import (
     AppUser,
     AppUserRole,
@@ -424,6 +424,7 @@ class PushNotificationService:
         mapping: dict[str, ColumnElement[bool]] = {
             NOTIFICATION_TYPE_STATION_AVAILABLE: ResidentNotificationPreferences.station_available == 1,
             NOTIFICATION_TYPE_CHARGING_COMPLETED: ResidentNotificationPreferences.charging_completed == 1,
+            NOTIFICATION_TYPE_QUEUE_NEXT_IN_LINE: ResidentNotificationPreferences.station_available == 1,
         }
         return mapping.get(notification_type)
 
@@ -534,11 +535,6 @@ class PushStationNotificationPoller:
 
                 if previous_status != "busy" or current_status != "available":
                     continue
-                if (
-                    queue_service.is_queue_enabled(condominium_id=snapshot.condominium_id)
-                    and queue_service.has_active_entries(condominium_id=snapshot.condominium_id)
-                ):
-                    continue
 
                 station = db.get(ChargingStation, snapshot.station_id)
                 if station is None:
@@ -547,17 +543,27 @@ class PushStationNotificationPoller:
                     station_id=snapshot.station_id,
                     observed_at=snapshot.observed_at,
                 )
-                for resident in service.list_subscribed_residents(
-                    condominium_id=snapshot.condominium_id,
-                    notification_type=NOTIFICATION_TYPE_STATION_AVAILABLE,
+                if queue_service.is_queue_enabled(condominium_id=snapshot.condominium_id) and queue_service.has_active_entries(
+                    condominium_id=snapshot.condominium_id
                 ):
-                    created += service.send_station_available(
+                    offered_entry = queue_service.get_offered_entry_for_station(
                         condominium_id=snapshot.condominium_id,
-                        resident=resident,
-                        station=station,
-                        observed_at=snapshot.observed_at,
-                        transition_key=transition_key,
+                        station_id=snapshot.station_id,
                     )
+                    entry = offered_entry or self._first_active_entry(
+                        db=db,
+                        condominium_id=snapshot.condominium_id,
+                    )
+                    if entry is not None:
+                        resident = db.get(AppUser, entry.resident_app_user_id)
+                        if resident is not None:
+                            created += service.send_station_available(
+                                condominium_id=snapshot.condominium_id,
+                                resident=resident,
+                                station=station,
+                                observed_at=snapshot.observed_at,
+                                transition_key=transition_key,
+                            )
 
             now = datetime.now(tz=UTC)
             if self._queue_assignments_active(now=now):
@@ -582,14 +588,14 @@ class PushStationNotificationPoller:
                             entry_id=entry.id,
                         )
 
-            created += self._notify_waiting_first_positions(
+            created += self._notify_active_first_positions(
                 db=db,
                 service=service,
                 queue_service=queue_service,
             )
             return created
 
-    def _notify_waiting_first_positions(
+    def _notify_active_first_positions(
         self,
         *,
         db: Session,
@@ -597,19 +603,19 @@ class PushStationNotificationPoller:
         queue_service: QueueService,
     ) -> int:
         created = 0
-        waiting_entries = (
+        active_entries = (
             db.scalars(
                 select(ChargingQueueEntry)
-                .where(ChargingQueueEntry.status == QUEUE_ENTRY_STATUS_WAITING)
+                .where(ChargingQueueEntry.status.in_([QUEUE_ENTRY_STATUS_WAITING, QUEUE_ENTRY_STATUS_OFFERED]))
                 .order_by(ChargingQueueEntry.condominium_id.asc(), ChargingQueueEntry.joined_at.asc(), ChargingQueueEntry.id.asc())
             ).all()
         )
-        first_waiting_by_condo: dict[int, ChargingQueueEntry] = {}
-        for entry in waiting_entries:
+        first_active_by_condo: dict[int, ChargingQueueEntry] = {}
+        for entry in active_entries:
             if not queue_service.is_queue_enabled(condominium_id=entry.condominium_id):
                 continue
-            first_waiting_by_condo.setdefault(entry.condominium_id, entry)
-        for entry in first_waiting_by_condo.values():
+            first_active_by_condo.setdefault(entry.condominium_id, entry)
+        for entry in first_active_by_condo.values():
             resident = db.get(AppUser, entry.resident_app_user_id)
             if resident is None:
                 continue
@@ -619,6 +625,16 @@ class PushStationNotificationPoller:
                 entry_id=entry.id,
             )
         return created
+
+    @staticmethod
+    def _first_active_entry(*, db: Session, condominium_id: int) -> ChargingQueueEntry | None:
+        return db.scalar(
+            select(ChargingQueueEntry)
+            .where(ChargingQueueEntry.condominium_id == condominium_id)
+            .where(ChargingQueueEntry.status.in_([QUEUE_ENTRY_STATUS_WAITING, QUEUE_ENTRY_STATUS_OFFERED]))
+            .order_by(ChargingQueueEntry.joined_at.asc(), ChargingQueueEntry.id.asc())
+            .limit(1)
+        )
 
     def _queue_assignments_active(self, *, now: datetime) -> bool:
         local_hour = now.astimezone(_ROME_TZ).hour
