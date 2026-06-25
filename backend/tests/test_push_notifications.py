@@ -18,7 +18,7 @@ from condocharge.app.services.push_notification_service import (
 )
 from condocharge.app.services.resident_notification_service import (
     NOTIFICATION_TYPE_CHARGING_COMPLETED,
-  NOTIFICATION_TYPE_STATION_AVAILABLE,
+    NOTIFICATION_TYPE_STATION_AVAILABLE,
     StationAvailabilitySnapshot,
 )
 from condocharge.core.config import Settings

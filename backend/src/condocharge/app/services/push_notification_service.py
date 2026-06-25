@@ -3,6 +3,7 @@ from __future__ import annotations
 # mypy: disable-error-code=import-untyped
 import hashlib
 import json
+import logging
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -22,9 +23,7 @@ from condocharge.app.services.resident_notification_service import (
     LiveStationAvailabilityFetcher,
     StationAvailabilitySnapshot,
 )
-from condocharge.app.services.telegram_notification_service import (
-    NOTIFICATION_TYPE_AGENT_OFFLINE,
-)
+from condocharge.app.services.telegram_notification_service import NOTIFICATION_TYPE_AGENT_OFFLINE
 from condocharge.core.config import Settings
 from condocharge.models.charging import AgentState, ChargingSession, ChargingStation
 from condocharge.models.queue import (
@@ -52,6 +51,7 @@ _AVAILABLE_STATES = {"available", "free"}
 _UNAVAILABLE_STATES = {"unavailable", "offline", "faulted", "unknown", "unreachable", "degraded"}
 _ONLINE_TRANSITION_STATES = {"checking", *_UNAVAILABLE_STATES}
 _ROME_TZ = ZoneInfo("Europe/Rome")
+_LOG = logging.getLogger("uvicorn.error")
 
 
 @dataclass(frozen=True)
@@ -291,10 +291,17 @@ class PushNotificationService:
         if not subscriptions:
             return 0
 
+        _LOG.info(
+            "push subscription found user_id=%s notification_type=%s active_subscriptions=%s",
+            user.id,
+            notification_type,
+            len(subscriptions),
+        )
         delivered = 0
         for subscription in subscriptions:
+            subscription_key = self._subscription_key(subscription.endpoint)
             subscription_dedupe_key = (
-                f"{dedupe_key}:subscription:{self._subscription_key(subscription.endpoint)}"
+                f"{dedupe_key}:subscription:{subscription_key}"
             )
             if (
                 self._existing_notification(
@@ -306,6 +313,13 @@ class PushNotificationService:
             ):
                 continue
 
+            _LOG.info(
+                "push delivery attempt user_id=%s notification_type=%s subscription_key=%s dedupe_key=%s",
+                user.id,
+                notification_type,
+                subscription_key,
+                subscription_dedupe_key,
+            )
             if not self._settings.web_push_enabled:
                 self._create_history(
                     condominium_id=condominium_id,
@@ -314,6 +328,20 @@ class PushNotificationService:
                     notification_type=notification_type,
                     dedupe_key=subscription_dedupe_key,
                     status=STATUS_PREVIEW,
+                )
+                _LOG.info(
+                    "push provider response user_id=%s notification_type=%s subscription_key=%s status=%s",
+                    user.id,
+                    notification_type,
+                    subscription_key,
+                    STATUS_PREVIEW,
+                )
+                _LOG.info(
+                    "push sent user_id=%s notification_type=%s subscription_key=%s delivery_status=%s",
+                    user.id,
+                    notification_type,
+                    subscription_key,
+                    STATUS_PREVIEW,
                 )
                 delivered += 1
                 continue
@@ -335,6 +363,16 @@ class PushNotificationService:
             except WebPushException as exc:
                 if self._is_gone(exc):
                     self._mark_subscription_inactive(subscription=subscription)
+                response = getattr(exc, "response", None)
+                provider_status = getattr(response, "status_code", None)
+                _LOG.warning(
+                    "push provider response user_id=%s notification_type=%s subscription_key=%s status=%s error=%s",
+                    user.id,
+                    notification_type,
+                    subscription_key,
+                    provider_status,
+                    str(exc)[:300],
+                )
                 self._create_history(
                     condominium_id=condominium_id,
                     user_id=user.id,
@@ -346,6 +384,14 @@ class PushNotificationService:
                 )
                 continue
 
+            provider_status = str(getattr(response, "status_code", "")) or None
+            _LOG.info(
+                "push provider response user_id=%s notification_type=%s subscription_key=%s status=%s",
+                user.id,
+                notification_type,
+                subscription_key,
+                provider_status or "",
+            )
             self._create_history(
                 condominium_id=condominium_id,
                 user_id=user.id,
@@ -354,7 +400,14 @@ class PushNotificationService:
                 dedupe_key=subscription_dedupe_key,
                 status=STATUS_SENT,
                 sent_at=datetime.now(tz=UTC),
-                provider_message_id=str(getattr(response, "status_code", "")) or None,
+                provider_message_id=provider_status,
+            )
+            _LOG.info(
+                "push sent user_id=%s notification_type=%s subscription_key=%s delivery_status=%s",
+                user.id,
+                notification_type,
+                subscription_key,
+                STATUS_SENT,
             )
             delivered += 1
         return delivered
@@ -559,7 +612,6 @@ class PushStationNotificationPoller:
             snapshots = list(self._occupancy_fetcher(db=db))
             created = 0
             free_station_ids_by_condo: dict[int, list[int]] = defaultdict(list)
-
             for snapshot in snapshots:
                 previous_raw = self._previous_statuses.get(snapshot.station_id)
                 previous_status = (
