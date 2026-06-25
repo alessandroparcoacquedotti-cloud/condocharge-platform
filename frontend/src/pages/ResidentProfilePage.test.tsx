@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   updateResidentNotificationPreferences: vi.fn(),
   issueResidentTelegramLink: vi.fn(),
   unlinkResidentTelegram: vi.fn(),
+  getNotificationPermissionState: vi.fn(),
+  syncExistingSubscription: vi.fn(),
+  resolveBrowserPushState: vi.fn(),
 }));
 
 vi.mock("../shared/api/endpoints", () => ({
@@ -19,6 +22,12 @@ vi.mock("../shared/api/endpoints", () => ({
     issueResidentTelegramLink: mocks.issueResidentTelegramLink,
     unlinkResidentTelegram: mocks.unlinkResidentTelegram,
   },
+}));
+
+vi.mock("../shared/notifications/pushService", () => ({
+  getNotificationPermissionState: mocks.getNotificationPermissionState,
+  syncExistingSubscription: mocks.syncExistingSubscription,
+  resolveBrowserPushState: mocks.resolveBrowserPushState,
 }));
 
 describe("ResidentProfilePage", () => {
@@ -38,6 +47,11 @@ describe("ResidentProfilePage", () => {
         station_back_online: false,
         agent_offline: true,
         agent_recovered: true,
+      },
+      push: {
+        subscribed: false,
+        active_subscriptions: 0,
+        web_push_enabled: false,
       },
       telegram: {
         linked: true,
@@ -59,6 +73,9 @@ describe("ResidentProfilePage", () => {
       telegram_username: null,
       linked_at: null,
     });
+    mocks.getNotificationPermissionState.mockReturnValue("default");
+    mocks.syncExistingSubscription.mockResolvedValue(false);
+    mocks.resolveBrowserPushState.mockResolvedValue("disabled");
   });
 
   it("renders username, contacts, and change password action", async () => {

@@ -12,6 +12,7 @@ from condocharge.api.v1.auth import router as auth_router
 from condocharge.api.v1.billing_admin import router as billing_admin_router
 from condocharge.api.v1.billing_resident import router as billing_resident_router
 from condocharge.api.v1.dashboard import router as dashboard_router
+from condocharge.api.v1.push import router as push_router
 from condocharge.api.v1.resident import router as resident_router
 from condocharge.api.v1.resident_queue import router as resident_queue_router
 from condocharge.api.v1.sessions import router as sessions_router
@@ -29,6 +30,7 @@ router.include_router(admin_queue_router)
 router.include_router(admin_telegram_router)
 router.include_router(billing_admin_router)
 router.include_router(billing_resident_router)
+router.include_router(push_router)
 router.include_router(resident_router)
 router.include_router(resident_queue_router)
 router.include_router(stations_router)

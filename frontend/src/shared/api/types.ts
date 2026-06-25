@@ -288,6 +288,19 @@ export type ResidentNotificationPreferences = {
 
 export type ResidentNotificationPreferencesUpdate = ResidentNotificationPreferences;
 
+export type PushStatusResponse = {
+  subscribed: boolean;
+  active_subscriptions: number;
+  web_push_enabled: boolean;
+};
+
+export type PushTestResponse = {
+  delivery_status: string;
+  push_enabled: boolean;
+  delivered_count: number;
+  message_preview: string;
+};
+
 export type TelegramLinkStatus = {
   linked: boolean;
   chat_id: string | null;
@@ -363,6 +376,7 @@ export type ResidentProfileResponse = {
   phone_number: string | null;
   linked_cards: ResidentCard[];
   notification_preferences: ResidentNotificationPreferences;
+  push: PushStatusResponse;
   telegram: TelegramLinkStatus;
 };
 

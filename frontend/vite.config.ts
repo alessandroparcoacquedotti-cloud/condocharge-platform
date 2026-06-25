@@ -13,6 +13,9 @@ export default defineConfig((configEnv) => {
     plugins: [
       react(),
       VitePWA({
+        strategies: "injectManifest",
+        srcDir: "src",
+        filename: "sw.ts",
         registerType: "autoUpdate",
         injectRegister: "auto",
         includeAssets: [
@@ -50,17 +53,8 @@ export default defineConfig((configEnv) => {
             },
           ],
         },
-        workbox: {
-          cleanupOutdatedCaches: true,
+        injectManifest: {
           globPatterns: ["**/*.{css,html,ico,js,png,svg,webp}"],
-          navigateFallback: "index.html",
-          navigateFallbackDenylist: [/^\/api(?:\/|$)/],
-          runtimeCaching: [
-            {
-              urlPattern: ({ url }) => url.pathname.startsWith("/api"),
-              handler: "NetworkOnly",
-            },
-          ],
         },
       }),
     ],

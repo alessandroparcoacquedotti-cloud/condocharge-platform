@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     notification_recency_minutes: int = Field(default=30)
     notification_station_cooldown_minutes: int = Field(default=15)
     notification_resident_cooldown_minutes: int = Field(default=5)
+    web_push_vapid_public_key: str = Field(default="")
+    web_push_vapid_private_key: str = Field(default="")
+    web_push_vapid_subject: str = Field(default="")
+    web_push_ttl_seconds: int = Field(default=300)
     queue_assignment_start_hour: int = Field(default=8)
     queue_assignment_end_hour: int = Field(default=22)
     queue_reservation_grace_minutes: int = Field(default=30)
@@ -87,6 +91,14 @@ class Settings(BaseSettings):
     def normalized_agent_occupancy_source(self) -> str:
         value = self.agent_occupancy_source.strip().lower()
         return value if value in {"live", "db", "live_only"} else "live"
+
+    @property
+    def web_push_enabled(self) -> bool:
+        return bool(
+            self.web_push_vapid_public_key.strip()
+            and self.web_push_vapid_private_key.strip()
+            and self.web_push_vapid_subject.strip()
+        )
 
     @property
     def agent_allowed_condominium_id_set(self) -> set[int]:

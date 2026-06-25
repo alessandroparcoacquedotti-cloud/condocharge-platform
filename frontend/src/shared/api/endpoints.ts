@@ -23,6 +23,8 @@ import type {
   AdminTelegramStatusResponse,
   AdminTelegramTestSendResponse,
   PaymentImportResultResponse,
+  PushStatusResponse,
+  PushTestResponse,
   ReceiptPayloadResponse,
   ReminderRunResponse,
   StatementPayloadResponse,
@@ -384,6 +386,15 @@ export const endpoints = {
   },
   unlinkResidentTelegram() {
     return api.deleteJson<TelegramLinkStatus>("/api/v1/resident/telegram/link");
+  },
+  pushSubscribe(params: { endpoint: string; keys: { p256dh: string; auth: string } }) {
+    return api.postJson<PushStatusResponse>("/api/v1/push/subscribe", params);
+  },
+  pushUnsubscribe(params: { endpoint: string; keys: { p256dh: string; auth: string } }) {
+    return api.postJson<PushStatusResponse>("/api/v1/push/unsubscribe", params);
+  },
+  pushTest() {
+    return api.postJson<PushTestResponse>("/api/v1/push/test", {});
   },
   residentBillingStatements() {
     return api.getJson<BillingStatementResponse[]>("/api/v1/resident/billing/statements");

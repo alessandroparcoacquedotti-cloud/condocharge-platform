@@ -11,6 +11,10 @@ from condocharge.api.router import api_router
 from condocharge.app.services.resident_notification_service import (
     StationAvailabilityNotificationPoller,
 )
+from condocharge.app.services.push_notification_service import (
+    PushAgentStatusNotificationPoller,
+    PushStationNotificationPoller,
+)
 from condocharge.app.services.telegram_notification_service import (
     TelegramAgentStatusNotificationPoller,
     TelegramStationAvailabilityNotificationPoller,
@@ -96,6 +100,38 @@ def create_app() -> FastAPI:
                 settings.notification_poll_interval_seconds,
             )
 
+            push_stop_event = Event()
+            push_station_poller = PushStationNotificationPoller(
+                db_factory=SessionLocal,
+                settings=settings,
+            )
+            push_agent_poller = PushAgentStatusNotificationPoller(
+                db_factory=SessionLocal,
+                settings=settings,
+            )
+            push_station_thread = Thread(
+                target=_run_notification_poller,
+                args=(push_station_poller, push_stop_event, settings.notification_poll_interval_seconds),
+                name="condocharge-push-station-poller",
+                daemon=True,
+            )
+            push_agent_thread = Thread(
+                target=_run_notification_poller,
+                args=(push_agent_poller, push_stop_event, settings.notification_poll_interval_seconds),
+                name="condocharge-push-agent-poller",
+                daemon=True,
+            )
+            push_station_thread.start()
+            push_agent_thread.start()
+            app.state.push_notification_poller_stop_event = push_stop_event
+            app.state.push_station_poller_thread = push_station_thread
+            app.state.push_agent_poller_thread = push_agent_thread
+            logger.info(
+                "push notification pollers enabled interval_seconds=%s web_push_enabled=%s",
+                settings.notification_poll_interval_seconds,
+                settings.web_push_enabled,
+            )
+
             if settings.telegram_bot_token.strip():
                 telegram_stop_event = Event()
                 telegram_station_poller = TelegramStationAvailabilityNotificationPoller(
@@ -148,6 +184,16 @@ def create_app() -> FastAPI:
             station_thread.join(timeout=5)
         if agent_thread is not None:
             agent_thread.join(timeout=5)
+
+        push_stop_event: Event | None = getattr(app.state, "push_notification_poller_stop_event", None)
+        push_station_thread: Thread | None = getattr(app.state, "push_station_poller_thread", None)
+        push_agent_thread: Thread | None = getattr(app.state, "push_agent_poller_thread", None)
+        if push_stop_event is not None:
+            push_stop_event.set()
+        if push_station_thread is not None:
+            push_station_thread.join(timeout=5)
+        if push_agent_thread is not None:
+            push_agent_thread.join(timeout=5)
     return app
 
 
@@ -155,7 +201,7 @@ app = create_app()
 
 
 def _run_notification_poller(
-    poller: StationAvailabilityNotificationPoller,
+    poller: object,
     stop_event: Event,
     interval_seconds: int,
 ) -> None:
@@ -163,7 +209,7 @@ def _run_notification_poller(
     wait_seconds = max(interval_seconds, 1)
     while not stop_event.is_set():
         try:
-            poller.poll_once()
+            getattr(poller, "poll_once")()
         except Exception:
             logger.exception("Resident notification poller failed")
         stop_event.wait(wait_seconds)

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from condocharge.schemas.api import ResidentSessionResponse
 from condocharge.schemas.auth import AppUserResponse
+from condocharge.schemas.push import ResidentPushStatusResponse
 from condocharge.schemas.telegram import TelegramLinkStatusResponse
 
 
@@ -191,6 +192,7 @@ class ResidentProfileResponse(BaseModel):
     phone_number: str | None = None
     linked_cards: list[ResidentCardResponse]
     notification_preferences: ResidentNotificationPreferencesResponse
+    push: ResidentPushStatusResponse
     telegram: TelegramLinkStatusResponse
 
 

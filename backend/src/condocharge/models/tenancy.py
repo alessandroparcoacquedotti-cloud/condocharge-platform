@@ -234,6 +234,28 @@ class ResidentTelegramLinkToken(Base):
     app_user: Mapped[AppUser] = relationship()
 
 
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("endpoint", name="uq_push_subscriptions_endpoint"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("app_users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    endpoint: Mapped[str] = mapped_column(String(1000), nullable=False)
+    p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
+    auth: Mapped[str] = mapped_column(String(255), nullable=False)
+    active: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user: Mapped[AppUser] = relationship()
+
+
 class ResidentInvitationToken(Base):
     __tablename__ = "resident_invitation_tokens"
     __table_args__ = (

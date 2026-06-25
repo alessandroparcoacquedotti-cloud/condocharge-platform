@@ -20,6 +20,7 @@ from condocharge.api.v1.stations import (
     _stations_live_occupancy,
     _status_is_fresh,
 )
+from condocharge.app.services.push_notification_service import PushNotificationService
 from condocharge.app.services.resident_telegram_link_service import ResidentTelegramLinkService
 from condocharge.app.services.telegram_bot_service import TelegramBotService
 from condocharge.core.config import get_settings
@@ -42,6 +43,7 @@ from condocharge.schemas.consumption import (
     ResidentSummaryResponse,
     UpdateResidentProfileRequest,
 )
+from condocharge.schemas.push import ResidentPushStatusResponse
 from condocharge.schemas.telegram import TelegramLinkIssueResponse, TelegramLinkStatusResponse
 
 router = APIRouter(prefix="/resident", tags=["resident"])
@@ -328,6 +330,16 @@ def _telegram_status(user: CurrentUser) -> TelegramLinkStatusResponse:
     )
 
 
+def _push_status(db: DbSession, user: CurrentUser) -> ResidentPushStatusResponse:
+    settings = get_settings()
+    subscribed, active_count = PushNotificationService(db=db, settings=settings).subscription_status(user=user)
+    return ResidentPushStatusResponse(
+        subscribed=subscribed,
+        active_subscriptions=active_count,
+        web_push_enabled=settings.web_push_enabled,
+    )
+
+
 @router.get(
     "/notifications/preferences",
     response_model=ResidentNotificationPreferencesResponse,
@@ -401,6 +413,7 @@ def get_profile(db: DbSession, current_user: CurrentUser) -> ResidentProfileResp
             agent_offline=bool(prefs.agent_offline),
             agent_recovered=bool(prefs.agent_recovered),
         ),
+        push=_push_status(db, current_user),
         telegram=_telegram_status(current_user),
     )
 

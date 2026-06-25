@@ -9,9 +9,11 @@ import type {
   AdminTelegramStatusResponse,
   AdminTelegramTestSendResponse,
   EmailHealthResponse,
+  PushTestResponse,
   TestEmailResponse,
 } from "../shared/api/types";
 import { useQuery } from "../shared/hooks/useQuery";
+import * as pushService from "../shared/notifications/pushService";
 import { AdminQueueSettingsCard } from "../shared/ui/AdminQueueSettingsCard";
 import { ErrorState, LoadingState, PageHead } from "../shared/ui";
 
@@ -62,6 +64,10 @@ export default function AdminSettingsPage() {
   const [sendingTelegramTest, setSendingTelegramTest] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<AdminTelegramTestSendResponse | null>(null);
   const [telegramTestError, setTelegramTestError] = useState<string | null>(null);
+  const [pushState, setPushState] = useState<pushService.BrowserPushState>("disabled");
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushTestResult, setPushTestResult] = useState<PushTestResponse | null>(null);
+  const [pushError, setPushError] = useState<string | null>(null);
   const [simResidentId, setSimResidentId] = useState("");
   const [simulatingType, setSimulatingType] = useState<string | null>(null);
   const [simulationResult, setSimulationResult] = useState<AdminTelegramSimulationResponse | null>(null);
@@ -79,6 +85,18 @@ export default function AdminSettingsPage() {
       telegram_agent_recovered_enabled: settingsQuery.data.telegram_agent_recovered_enabled,
     });
   }, [settingsQuery.data]);
+
+  useEffect(() => {
+    void refreshPushState();
+  }, []);
+
+  async function refreshPushState() {
+    try {
+      setPushState(await pushService.resolveBrowserPushState(false));
+    } catch {
+      setPushState("disabled");
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -159,6 +177,41 @@ export default function AdminSettingsPage() {
     }
   }
 
+  async function enableBrowserPush() {
+    setPushLoading(true);
+    setPushError(null);
+    setPushTestResult(null);
+    try {
+      const permission = await pushService.requestNotificationPermission();
+      if (permission !== "granted") {
+        setPushError("Permesso notifiche non concesso.");
+        await refreshPushState();
+        return;
+      }
+      await pushService.subscribeToPush();
+      await refreshPushState();
+    } catch (err) {
+      setPushError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Impossibile attivare le notifiche push");
+    } finally {
+      setPushLoading(false);
+    }
+  }
+
+  async function sendPushTest() {
+    setPushLoading(true);
+    setPushError(null);
+    setPushTestResult(null);
+    try {
+      const payload = await endpoints.pushTest();
+      setPushTestResult(payload);
+      await refreshPushState();
+    } catch (err) {
+      setPushError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Invio push di test non riuscito");
+    } finally {
+      setPushLoading(false);
+    }
+  }
+
   return (
     <div>
       <PageHead title="Impostazioni" subtitle="Prezzo energia condominiale usato per stimare i costi di ricarica" />
@@ -170,6 +223,7 @@ export default function AdminSettingsPage() {
       {error ? <ErrorState title="Aggiornamento non riuscito" message={error} /> : null}
       {testError ? <ErrorState title="Test email non riuscito" message={testError} /> : null}
       {telegramTestError ? <ErrorState title="Test Telegram non riuscito" message={telegramTestError} /> : null}
+      {pushError ? <ErrorState title="Test push non riuscito" message={pushError} /> : null}
       {simulationError ? <ErrorState title="Simulazione Telegram non riuscita" message={simulationError} /> : null}
       {queueSettingsQuery.error ? (
         <ErrorState title="Impossibile caricare le impostazioni coda" message={queueSettingsQuery.error} onRetry={queueSettingsQuery.refetch} />
@@ -298,6 +352,25 @@ export default function AdminSettingsPage() {
           </form>
           {telegramTestResult ? (
             <pre style={{ marginTop: 12, whiteSpace: "pre-wrap" }}>{JSON.stringify(telegramTestResult, null, 2)}</pre>
+          ) : null}
+        </div>
+
+        <div className="card" style={{ gridColumn: "span 12" }}>
+          <div className="card-title">Push Browser</div>
+          <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+            <div><strong>Stato:</strong> {pushState === "active" ? "Attive" : pushState === "unsupported" ? "Non supportate" : "Disattivate"}</div>
+            <div className="muted">Attiva il browser corrente e invia una notifica reale di test all'account admin connesso.</div>
+          </div>
+          <div className="row" style={{ justifyContent: "flex-start", flexWrap: "wrap" }}>
+            <button className="btn" type="button" onClick={enableBrowserPush} disabled={pushLoading || pushState === "unsupported"}>
+              {pushLoading ? "Attivazione..." : "Attiva notifiche browser"}
+            </button>
+            <button className="btn" type="button" onClick={sendPushTest} disabled={pushLoading || pushState !== "active"}>
+              {pushLoading ? "Invio..." : "Invia notifica di test"}
+            </button>
+          </div>
+          {pushTestResult ? (
+            <pre style={{ marginTop: 12, whiteSpace: "pre-wrap" }}>{JSON.stringify(pushTestResult, null, 2)}</pre>
           ) : null}
         </div>
 

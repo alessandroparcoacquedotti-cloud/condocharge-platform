@@ -15,6 +15,7 @@ from condocharge.app.integrations.legrand.driver import (
 from condocharge.app.integrations.legrand.driver import (
     LegrandGreenUpDriver,
 )
+from condocharge.app.services.push_notification_service import PushNotificationService
 from condocharge.app.services.resident_notification_service import ResidentNotificationService
 from condocharge.app.services.telegram_notification_service import (
     ResidentTelegramNotificationService,
@@ -41,12 +42,17 @@ class SessionSyncService:
         driver: LegrandGreenUpDriver,
         settings: Settings | None = None,
         notification_service: ResidentNotificationService | None = None,
+        push_notification_service: PushNotificationService | None = None,
         telegram_notification_service: ResidentTelegramNotificationService | None = None,
     ) -> None:
         self._db = db
         self._driver = driver
         self._settings = settings or get_settings()
         self._notification_service = notification_service or ResidentNotificationService(
+            db=db,
+            settings=self._settings,
+        )
+        self._push_notification_service = push_notification_service or PushNotificationService(
             db=db,
             settings=self._settings,
         )
@@ -260,6 +266,11 @@ class SessionSyncService:
 
             try:
                 self._notification_service.send_charging_completed(
+                    session=row,
+                    resident=resident,
+                    station=station,
+                )
+                self._push_notification_service.send_charging_completed(
                     session=row,
                     resident=resident,
                     station=station,
