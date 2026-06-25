@@ -20,6 +20,8 @@ export default function ResidentProfilePageTelegramV11() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pushState, setPushState] = useState<pushService.BrowserPushState>("disabled");
+  const [pushDiag, setPushDiag] = useState<pushService.PushDiagnosticsSnapshot | null>(null);
+  const [pushDiagLoading, setPushDiagLoading] = useState(false);
 
   useEffect(() => {
     if (!query.data) return;
@@ -31,6 +33,19 @@ export default function ResidentProfilePageTelegramV11() {
     if (!query.data) return;
     void refreshPushState(query.data.push.subscribed);
   }, [query.data]);
+
+  useEffect(() => {
+    void refreshPushDiagnostics();
+  }, []);
+
+  async function refreshPushDiagnostics() {
+    setPushDiagLoading(true);
+    try {
+      setPushDiag(await pushService.collectPushDiagnosticsSnapshot());
+    } finally {
+      setPushDiagLoading(false);
+    }
+  }
 
   async function refreshPushState(serverSubscribed: boolean) {
     try {
@@ -77,13 +92,16 @@ export default function ResidentProfilePageTelegramV11() {
     setMessage(null);
     setPushLoading(true);
     try {
+      await refreshPushDiagnostics();
       const permission = await pushService.requestNotificationPermission();
+      await refreshPushDiagnostics();
       if (permission !== "granted") {
         setError("Permesso notifiche non concesso.");
         await refreshPushState(false);
         return;
       }
       await pushService.subscribeToPush();
+      await refreshPushDiagnostics();
       setMessage("Notifiche push attivate.");
       await query.refetch();
       await refreshPushState(true);
@@ -100,6 +118,7 @@ export default function ResidentProfilePageTelegramV11() {
     setPushLoading(true);
     try {
       await pushService.unsubscribeFromPush();
+      await refreshPushDiagnostics();
       setMessage("Notifiche push disattivate.");
       await query.refetch();
       await refreshPushState(false);
@@ -185,6 +204,63 @@ export default function ResidentProfilePageTelegramV11() {
                     {pushLoading ? "Disattivazione..." : "Disattiva notifiche"}
                   </button>
                 </div>
+
+                <details className="card" style={{ marginTop: 8 }}>
+                  <summary className="card-title" style={{ cursor: "pointer" }}>
+                    Diagnostica push
+                  </summary>
+                  <div className="stack" style={{ paddingTop: 12 }}>
+                    <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
+                      <StatusBadge tone="neutral" label={`HTTPS: ${pushDiag?.isSecureContext ? "Sì" : "No"}`} />
+                      <StatusBadge
+                        tone="neutral"
+                        label={`Supporto push: ${pushDiag ? (pushDiag.pushSupported ? "Sì" : "No") : "…"}`}
+                      />
+                      <StatusBadge
+                        tone="neutral"
+                        label={`Permesso: ${pushDiag ? String(pushDiag.notificationPermissionState) : "…"}`}
+                      />
+                      <StatusBadge
+                        tone="neutral"
+                        label={`SW ready: ${pushDiag ? (pushDiag.serviceWorkerReadyResolved ? "Sì" : "No") : "…"}`}
+                      />
+                      <StatusBadge
+                        tone="neutral"
+                        label={`VAPID: ${pushDiag ? (pushDiag.vapidPublicKeyRuntimePresent ? pushDiag.vapidPublicKeyRuntimePrefix : "assente") : "…"}`}
+                      />
+                    </div>
+
+                    <div className="section-actions">
+                      <button className="btn btn--secondary touch-safe" type="button" onClick={refreshPushDiagnostics} disabled={pushDiagLoading}>
+                        {pushDiagLoading ? "Verifica..." : "Aggiorna diagnostica"}
+                      </button>
+                      <button
+                        className="btn btn--secondary touch-safe"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const text = JSON.stringify(pushDiag, null, 2);
+                            await navigator.clipboard.writeText(text);
+                            setMessage("Diagnostica copiata.");
+                          } catch {
+                            setError("Impossibile copiare la diagnostica.");
+                          }
+                        }}
+                        disabled={!pushDiag}
+                      >
+                        Copia
+                      </button>
+                    </div>
+
+                    {pushDiag ? (
+                      <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+                        {JSON.stringify(pushDiag, null, 2)}
+                      </pre>
+                    ) : (
+                      <div className="muted">Nessuna diagnostica disponibile.</div>
+                    )}
+                  </div>
+                </details>
               </div>
             </Surface>
           </div>
