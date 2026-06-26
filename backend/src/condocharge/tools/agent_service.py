@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import sys
@@ -146,10 +147,8 @@ class CondoChargeAgentService(_BaseServiceFramework):
 
     def __init__(self, args: list[str]) -> None:
         if win32serviceutil is not None:
-            try:
+            with contextlib.suppress(Exception):
                 super().__init__(args if args else [self._svc_name_])
-            except Exception:
-                pass
         else:
             super().__init__()
         self._stop_event = Event()
