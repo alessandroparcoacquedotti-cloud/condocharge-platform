@@ -48,7 +48,9 @@ class AgentIngestionService:
         now = datetime.now(tz=UTC)
         state.hostname = body.hostname.strip()
         state.agent_version = body.agent_version.strip()
+        state.agent_started_at = body.started_at.astimezone(UTC)
         state.last_heartbeat_at = now
+        state.last_heartbeat_sent_at = body.sent_at.astimezone(UTC)
         state.heartbeat_count = int(body.heartbeat_count)
         state.polling_count = int(body.polling_count)
         state.import_count = int(body.import_count)

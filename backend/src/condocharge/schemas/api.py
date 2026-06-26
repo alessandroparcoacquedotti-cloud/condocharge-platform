@@ -175,11 +175,16 @@ class TopUserByEnergyResponse(BaseModel):
 
 class AgentStatusResponse(BaseModel):
     agent_id: str | None = None
+    hostname: str | None = None
+    agent_version: str | None = None
     online: bool
     health_color: str
+    agent_started_at: datetime | None = None
     last_heartbeat: datetime | None = None
+    last_heartbeat_sent_at: datetime | None = None
     last_station_update: datetime | None = None
     last_session_import: datetime | None = None
+    service_uptime_seconds: int | None = None
     heartbeat_count: int
     polling_count: int
     import_count: int

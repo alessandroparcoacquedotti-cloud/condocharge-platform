@@ -6,6 +6,7 @@ from condocharge.api.v1.admin import router as admin_router
 from condocharge.api.v1.admin_email import router as admin_email_router
 from condocharge.api.v1.admin_notifications import router as admin_notifications_router
 from condocharge.api.v1.admin_queue import router as admin_queue_router
+from condocharge.api.v1.admin_system_health import router as admin_system_health_router
 from condocharge.api.v1.admin_telegram import router as admin_telegram_router
 from condocharge.api.v1.agent import router as agent_router
 from condocharge.api.v1.auth import router as auth_router
@@ -27,6 +28,7 @@ router.include_router(admin_router)
 router.include_router(admin_email_router)
 router.include_router(admin_notifications_router)
 router.include_router(admin_queue_router)
+router.include_router(admin_system_health_router)
 router.include_router(admin_telegram_router)
 router.include_router(billing_admin_router)
 router.include_router(billing_resident_router)

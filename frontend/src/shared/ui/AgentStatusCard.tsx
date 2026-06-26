@@ -7,6 +7,17 @@ function getHealthLabel(healthColor: string, online: boolean) {
   return online ? "Attenzione" : "Offline";
 }
 
+function formatUptimeSeconds(value: number | null | undefined) {
+  if (value == null) return "-";
+  const seconds = Math.max(0, Math.floor(value));
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}g ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
 export function AgentStatusCard(props: { status: AgentStatusResponse }) {
   const { status } = props;
   const statusClass =
@@ -45,8 +56,20 @@ export function AgentStatusCard(props: { status: AgentStatusResponse }) {
             <div className="kv__value">{status.agent_id ?? "-"}</div>
           </div>
           <div className="detail-card kv">
+            <div className="kv__label">Hostname</div>
+            <div className="kv__value">{status.hostname ?? "-"}</div>
+          </div>
+          <div className="detail-card kv">
+            <div className="kv__label">Versione</div>
+            <div className="kv__value">{status.agent_version ?? "-"}</div>
+          </div>
+          <div className="detail-card kv">
             <div className="kv__label">Ultimo heartbeat</div>
             <div className="kv__value">{formatDateTime(status.last_heartbeat)}</div>
+          </div>
+          <div className="detail-card kv">
+            <div className="kv__label">Heartbeat inviato</div>
+            <div className="kv__value">{formatDateTime(status.last_heartbeat_sent_at)}</div>
           </div>
           <div className="detail-card kv">
             <div className="kv__label">Ultimo aggiornamento colonnine</div>
@@ -55,6 +78,14 @@ export function AgentStatusCard(props: { status: AgentStatusResponse }) {
           <div className="detail-card kv">
             <div className="kv__label">Ultimo import sessioni</div>
             <div className="kv__value">{formatDateTime(status.last_session_import)}</div>
+          </div>
+          <div className="detail-card kv">
+            <div className="kv__label">Avvio servizio</div>
+            <div className="kv__value">{formatDateTime(status.agent_started_at)}</div>
+          </div>
+          <div className="detail-card kv">
+            <div className="kv__label">Uptime servizio</div>
+            <div className="kv__value">{formatUptimeSeconds(status.service_uptime_seconds)}</div>
           </div>
         </div>
 

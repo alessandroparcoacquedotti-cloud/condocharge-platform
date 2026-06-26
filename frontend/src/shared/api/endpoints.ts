@@ -51,6 +51,7 @@ import type {
   SettlementSummaryResponse,
   StationListResponse,
   StationOccupancyListResponse,
+  SystemHealthResponse,
   TestEmailResponse,
   UserListResponse,
   InviteResidentResponse,
@@ -174,6 +175,9 @@ export const endpoints = {
   },
   adminQueueSettings() {
     return api.getJson<AdminQueueSettingsResponse>("/api/v1/admin/queue/settings");
+  },
+  adminSystemHealth() {
+    return api.getJson<SystemHealthResponse>("/api/v1/admin/system/health");
   },
   updateAdminQueueSettings(params: { queue_enabled: boolean }) {
     return api.patchJson<AdminQueueSettingsResponse>("/api/v1/admin/queue/settings", params);

@@ -165,16 +165,32 @@ export type TopUserByEnergy = {
 
 export type AgentStatusResponse = {
   agent_id: string | null;
+  hostname?: string | null;
+  agent_version?: string | null;
   online: boolean;
   health_color: "green" | "yellow" | "red" | string;
+  agent_started_at?: string | null;
   last_heartbeat: string | null;
+  last_heartbeat_sent_at?: string | null;
   last_station_update: string | null;
   last_session_import: string | null;
+  service_uptime_seconds?: number | null;
   heartbeat_count: number;
   polling_count: number;
   import_count: number;
   retry_count: number;
   failure_count: number;
+};
+
+export type SystemHealthResponse = {
+  server_time: string;
+  backend_ok: boolean;
+  database_ok: boolean;
+  railway_dns_ok: boolean;
+  telegram_configured: boolean;
+  push_configured: boolean;
+  push_active_subscriptions: number;
+  agent_status: AgentStatusResponse;
 };
 
 export type DashboardSummaryResponse = {

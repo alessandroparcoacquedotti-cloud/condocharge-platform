@@ -26,6 +26,7 @@ const AdminReconciliationPage = lazy(() => import("./pages/AdminReconciliationPa
 const AdminSettlementPage = lazy(() => import("./pages/AdminSettlementPage"));
 const AdminRemindersPage = lazy(() => import("./pages/AdminRemindersPage"));
 const AdminNotificationsLogPage = lazy(() => import("./pages/AdminNotificationsLogPage"));
+const AdminSystemHealthPage = lazy(() => import("./pages/AdminSystemHealthPage"));
 
 function roleLabel(role: string | undefined) {
   if (role === "admin") return "Amministratore";
@@ -119,6 +120,9 @@ function AdminLayout() {
                     </NavLink>
                     <NavLink to="/admin/verifiche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
                       Verifiche
+                    </NavLink>
+                    <NavLink to="/admin/system-health" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
+                      System Health
                     </NavLink>
                     <NavLink to="/admin/notifiche" className={({ isActive }) => (isActive ? "nav__link is-active" : "nav__link")}>
                       Notifiche
@@ -328,6 +332,16 @@ export default function App() {
               <Suspense fallback={<LoadingState label="Caricamento pagina…" />}>
                 <RequireRole allow={["admin"]}>
                   <AdminReconciliationPage />
+                </RequireRole>
+              </Suspense>
+            }
+          />
+          <Route
+            path="/admin/system-health"
+            element={
+              <Suspense fallback={<LoadingState label="Caricamento pagina…" />}>
+                <RequireRole allow={["admin"]}>
+                  <AdminSystemHealthPage />
                 </RequireRole>
               </Suspense>
             }

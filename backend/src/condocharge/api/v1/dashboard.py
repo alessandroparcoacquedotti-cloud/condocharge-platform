@@ -30,13 +30,21 @@ def _build_agent_status(*, db: DbSession, condominium_id: int, now: datetime | N
         .limit(1)
     )
     if state is None or state.last_heartbeat_at is None:
+        uptime_seconds: int | None = None
+        if state is not None and state.agent_started_at is not None:
+            uptime_seconds = max(0, int((now - state.agent_started_at.astimezone(UTC)).total_seconds()))
         return AgentStatusResponse(
             agent_id=state.agent_id if state is not None else None,
+            hostname=state.hostname if state is not None else None,
+            agent_version=state.agent_version if state is not None else None,
             online=False,
             health_color="red",
+            agent_started_at=state.agent_started_at if state is not None else None,
             last_heartbeat=state.last_heartbeat_at if state is not None else None,
+            last_heartbeat_sent_at=state.last_heartbeat_sent_at if state is not None else None,
             last_station_update=state.last_station_update_at if state is not None else None,
             last_session_import=state.last_session_import_at if state is not None else None,
+            service_uptime_seconds=uptime_seconds,
             heartbeat_count=int(state.heartbeat_count) if state is not None else 0,
             polling_count=int(state.polling_count) if state is not None else 0,
             import_count=int(state.import_count) if state is not None else 0,
@@ -55,13 +63,21 @@ def _build_agent_status(*, db: DbSession, condominium_id: int, now: datetime | N
         health_color = "red"
         online = False
 
+    uptime_seconds: int | None = None
+    if state.agent_started_at is not None:
+        uptime_seconds = max(0, int((now - state.agent_started_at.astimezone(UTC)).total_seconds()))
     return AgentStatusResponse(
         agent_id=state.agent_id,
+        hostname=state.hostname,
+        agent_version=state.agent_version,
         online=online,
         health_color=health_color,
+        agent_started_at=state.agent_started_at,
         last_heartbeat=state.last_heartbeat_at,
+        last_heartbeat_sent_at=state.last_heartbeat_sent_at,
         last_station_update=state.last_station_update_at,
         last_session_import=state.last_session_import_at,
+        service_uptime_seconds=uptime_seconds,
         heartbeat_count=int(state.heartbeat_count),
         polling_count=int(state.polling_count),
         import_count=int(state.import_count),

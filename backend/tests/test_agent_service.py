@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
 
+from condocharge.tools.agent import AgentScheduler
 from condocharge.tools import agent_service
 
 
@@ -16,6 +18,7 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch, *, log_dir: Path) -> None
     monkeypatch.setenv("CONDOCHARGE_LEGRAND_USERNAME", "admin")
     monkeypatch.setenv("CONDOCHARGE_LEGRAND_PASSWORD", "secret")
     monkeypatch.setenv("CONDOCHARGE_AGENT_LOG_DIR", str(log_dir))
+    monkeypatch.setenv("CONDOCHARGE_AGENT_STARTUP_VALIDATE", "false")
 
 
 def test_run_service_logs_startup_and_shutdown(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -49,3 +52,26 @@ def test_run_service_can_restart_after_clean_stop(monkeypatch: pytest.MonkeyPatc
     assert first == 0
     assert second == 0
     assert runs["count"] == 2
+
+
+def test_pythonclass_importable_and_entrypoint_present() -> None:
+    assert callable(agent_service.run_service)
+    assert hasattr(agent_service, "CondoChargeAgentService")
+    assert callable(getattr(agent_service, "CondoChargeAgentService"))
+
+
+def test_windows_service_wrapper_initializes() -> None:
+    agent_service.CondoChargeAgentService([])
+
+
+def test_agent_scheduler_can_start_and_step() -> None:
+    ran = {"ok": False}
+    lock = threading.Lock()
+
+    def mark() -> None:
+        ran["ok"] = True
+
+    scheduler = AgentScheduler(clock=lambda: 0.0, start_job=lambda fn: fn())
+    scheduler.add_job(name="heartbeat", interval_seconds=60, lock=lock, fn=mark, on_overlap=lambda _name: None)
+    scheduler.step()
+    assert ran["ok"] is True

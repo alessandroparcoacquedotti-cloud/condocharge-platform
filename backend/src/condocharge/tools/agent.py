@@ -317,6 +317,7 @@ def _runtime_state() -> AgentRuntimeState:
 def _log_failure(logger: logging.Logger, *, event: str, exc: Exception, **extra: Any) -> None:
     logger.error(
         event,
+        exc_info=True,
         extra={
             "event": event,
             "error": f"{type(exc).__name__}: {exc}",

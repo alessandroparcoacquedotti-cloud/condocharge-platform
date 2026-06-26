@@ -174,12 +174,14 @@ def test_heartbeat_persists_latest_agent_state(monkeypatch: pytest.MonkeyPatch) 
         assert state is not None
         assert state.agent_id == "test-agent"
         assert state.hostname == "mini-pc-agent"
+        assert state.agent_started_at == datetime(2026, 6, 18, 8, 0, tzinfo=UTC)
         assert state.heartbeat_count == 12
         assert state.polling_count == 24
         assert state.import_count == 3
         assert state.retry_count == 4
         assert state.failure_count == 1
         assert state.last_heartbeat_at is not None
+        assert state.last_heartbeat_sent_at == datetime(2026, 6, 18, 8, 1, tzinfo=UTC)
 
 
 def test_status_ingestion_updates_station_fields(monkeypatch: pytest.MonkeyPatch) -> None:
