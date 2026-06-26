@@ -7,6 +7,7 @@ import sys
 import traceback
 from collections.abc import Callable
 from threading import Event
+from typing import Any
 
 import httpx
 
@@ -14,21 +15,15 @@ from condocharge.app.integrations.legrand.driver import LegrandGreenUpDriver
 from condocharge.tools import agent as agent_tool
 
 try:
-    import servicemanager  # type: ignore[import-not-found]
-    import win32event  # type: ignore[import-not-found]
-    import win32service  # type: ignore[import-not-found]
-    import win32serviceutil  # type: ignore[import-not-found]
-
-    _BaseServiceFramework = win32serviceutil.ServiceFramework
+    import servicemanager  # type: ignore[import-untyped]
+    import win32event  # type: ignore[import-untyped]
+    import win32service  # type: ignore[import-untyped]
+    import win32serviceutil  # type: ignore[import-untyped]
 except Exception:
     servicemanager = None
     win32event = None
     win32service = None
     win32serviceutil = None
-
-    class _BaseServiceFramework:
-        def __init__(self, *_: object, **__: object) -> None:
-            return None
 
 
 def _event_info(message: str) -> None:
@@ -140,33 +135,52 @@ def run_service(*, stop_requested: Callable[[], bool] | None = None) -> int:
         return 1
 
 
-class CondoChargeAgentService(_BaseServiceFramework):
+class _CondoChargeAgentServiceStub:
     _svc_name_ = "CondoChargeAgent"
     _svc_display_name_ = "CondoCharge Agent"
     _svc_description_ = "Autonomous CondoCharge agent service for heartbeat, polling, and session import."
 
-    def __init__(self, args: list[str]) -> None:
-        if win32serviceutil is not None:
-            with contextlib.suppress(Exception):
-                super().__init__(args if args else [self._svc_name_])
-        else:
-            super().__init__()
+    def __init__(self, _: list[str]) -> None:
         self._stop_event = Event()
-        self._win32_stop_handle = (
-            win32event.CreateEvent(None, 0, 0, None) if win32event is not None else None
-        )
+        self._win32_stop_handle = None
 
     def SvcStop(self) -> None:
-        _event_info("CondoChargeAgent stopping (SvcStop)")
-        if win32service is not None:
-            self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
         self._stop_event.set()
-        if self._win32_stop_handle is not None and win32event is not None:
-            win32event.SetEvent(self._win32_stop_handle)
 
     def SvcDoRun(self) -> None:
-        _event_info("CondoChargeAgent running (SvcDoRun)")
-        exit_code = run_service(stop_requested=self._stop_event.is_set)
-        if exit_code != 0:
-            _event_error(f"CondoChargeAgent stopped with exit_code={exit_code}")
+        run_service(stop_requested=self._stop_event.is_set)
+
+
+CondoChargeAgentService: type[Any]
+if win32serviceutil is not None:
+    class _CondoChargeAgentServiceWin32(win32serviceutil.ServiceFramework):  # type: ignore[misc]
+        _svc_name_ = _CondoChargeAgentServiceStub._svc_name_
+        _svc_display_name_ = _CondoChargeAgentServiceStub._svc_display_name_
+        _svc_description_ = _CondoChargeAgentServiceStub._svc_description_
+
+        def __init__(self, args: list[str]) -> None:
+            with contextlib.suppress(Exception):
+                super().__init__(args if args else [self._svc_name_])
+            self._stop_event = Event()
+            self._win32_stop_handle = (
+                win32event.CreateEvent(None, 0, 0, None) if win32event is not None else None
+            )
+
+        def SvcStop(self) -> None:
+            _event_info("CondoChargeAgent stopping (SvcStop)")
+            if win32service is not None:
+                self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+            self._stop_event.set()
+            if self._win32_stop_handle is not None and win32event is not None:
+                win32event.SetEvent(self._win32_stop_handle)
+
+        def SvcDoRun(self) -> None:
+            _event_info("CondoChargeAgent running (SvcDoRun)")
+            exit_code = run_service(stop_requested=self._stop_event.is_set)
+            if exit_code != 0:
+                _event_error(f"CondoChargeAgent stopped with exit_code={exit_code}")
+
+    CondoChargeAgentService = _CondoChargeAgentServiceWin32
+else:
+    CondoChargeAgentService = _CondoChargeAgentServiceStub
 

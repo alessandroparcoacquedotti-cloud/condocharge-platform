@@ -29,10 +29,10 @@ def _build_agent_status(*, db: DbSession, condominium_id: int, now: datetime | N
         .order_by(AgentState.updated_at.desc(), AgentState.id.desc())
         .limit(1)
     )
+    uptime_seconds: int | None = None
+    if state is not None and state.agent_started_at is not None:
+        uptime_seconds = max(0, int((now - state.agent_started_at.astimezone(UTC)).total_seconds()))
     if state is None or state.last_heartbeat_at is None:
-        uptime_seconds: int | None = None
-        if state is not None and state.agent_started_at is not None:
-            uptime_seconds = max(0, int((now - state.agent_started_at.astimezone(UTC)).total_seconds()))
         return AgentStatusResponse(
             agent_id=state.agent_id if state is not None else None,
             hostname=state.hostname if state is not None else None,
@@ -63,9 +63,6 @@ def _build_agent_status(*, db: DbSession, condominium_id: int, now: datetime | N
         health_color = "red"
         online = False
 
-    uptime_seconds: int | None = None
-    if state.agent_started_at is not None:
-        uptime_seconds = max(0, int((now - state.agent_started_at.astimezone(UTC)).total_seconds()))
     return AgentStatusResponse(
         agent_id=state.agent_id,
         hostname=state.hostname,
