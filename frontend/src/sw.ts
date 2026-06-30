@@ -5,14 +5,18 @@ import { precacheAndRoute, cleanupOutdatedCaches, createHandlerBoundToURL } from
 import { NavigationRoute, registerRoute } from "workbox-routing";
 import { NetworkOnly } from "workbox-strategies";
 
+const CONDOCHARGE_SW_VERSION = "push-v1";
+
 declare let self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{
     url: string;
     revision: string | null;
   }>;
+  CONDOCHARGE_SW_VERSION?: string;
 };
 
 self.skipWaiting();
+self.CONDOCHARGE_SW_VERSION = CONDOCHARGE_SW_VERSION;
 clientsClaim();
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
@@ -20,6 +24,14 @@ precacheAndRoute(self.__WB_MANIFEST);
 const navigationHandler = createHandlerBoundToURL("/index.html");
 registerRoute(new NavigationRoute(navigationHandler, { denylist: [/^\/api(?:\/|$)/] }));
 registerRoute(({ url }) => url.pathname.startsWith("/api"), new NetworkOnly());
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    self.clients.claim().then(() => {
+      console.info(`[CondoCharge SW] ${CONDOCHARGE_SW_VERSION} activated`);
+    }),
+  );
+});
 
 self.addEventListener("push", (event) => {
   const payload = event.data?.json() as

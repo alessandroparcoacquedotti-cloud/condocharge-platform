@@ -555,13 +555,18 @@ textarea {
 
 .device-tile-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .device-tile {
   appearance: none;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 130px;
   border-radius: 20px;
   padding: 18px 16px;
@@ -610,6 +615,10 @@ textarea {
 .device-tile__meta {
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.device-tile-grid > * {
+  min-width: 0;
 }
 
 .device-tile--ok {

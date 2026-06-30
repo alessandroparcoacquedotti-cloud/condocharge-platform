@@ -17,7 +17,7 @@ export default defineConfig((configEnv) => {
         srcDir: "src",
         filename: "sw.ts",
         registerType: "autoUpdate",
-        injectRegister: "auto",
+        injectRegister: null,
         includeAssets: [
           "apple-touch-icon.png",
           "maskable-icon-512x512.png",

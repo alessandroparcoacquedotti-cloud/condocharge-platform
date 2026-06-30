@@ -1,5 +1,5 @@
 import { MemoryRouter } from "react-router-dom";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import ResidentNotificationsPage from "./ResidentNotificationsPage";
@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   subscribeToPush: vi.fn(),
   unsubscribeFromPush: vi.fn(),
   collectPushDiagnosticsSnapshot: vi.fn(),
+  sendPushTest: vi.fn(),
 }));
 
 vi.mock("../shared/api/endpoints", () => ({
@@ -33,10 +34,12 @@ vi.mock("../shared/notifications/pushService", () => ({
   subscribeToPush: mocks.subscribeToPush,
   unsubscribeFromPush: mocks.unsubscribeFromPush,
   collectPushDiagnosticsSnapshot: mocks.collectPushDiagnosticsSnapshot,
+  sendPushTest: mocks.sendPushTest,
 }));
 
 describe("ResidentNotificationsPage", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mocks.residentNotificationPreferences.mockResolvedValue({
       charging_completed: true,
       station_available: true,
@@ -86,6 +89,7 @@ describe("ResidentNotificationsPage", () => {
       serviceWorkerScope: "https://example.com/",
       pushSubscriptionPresent: true,
     });
+    mocks.sendPushTest.mockResolvedValue({ delivery_status: "sent", delivered_count: 1 });
   });
 
   it("shows push controls and explanatory copy on Notifiche page", async () => {
@@ -101,7 +105,60 @@ describe("ResidentNotificationsPage", () => {
     expect(screen.getByText("Notifiche push")).toBeInTheDocument();
     expect(screen.getByText("Le notifiche app arrivano anche quando Condo Charge e chiusa.")).toBeInTheDocument();
     expect(screen.getByText("Attiva notifiche")).toBeInTheDocument();
+    expect(screen.getByText("Invia notifica di test")).toBeInTheDocument();
     expect(screen.getByText("Disattiva notifiche")).toBeInTheDocument();
     expect(screen.getByText("Diagnostica push")).toBeInTheDocument();
+  });
+
+  it("calls current-user push test endpoint and shows success feedback", async () => {
+    render(
+      <MemoryRouter>
+        <ResidentNotificationsPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(mocks.residentProfile).toHaveBeenCalled());
+    const button = await screen.findByRole("button", { name: "Invia notifica di test" });
+    await waitFor(() => expect(button).not.toBeDisabled());
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mocks.sendPushTest).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Notifica di test inviata correttamente.")).toBeInTheDocument();
+    expect(screen.getByTestId("resident-push-self-test-details")).toHaveTextContent("delivery_status");
+    expect(screen.getByTestId("resident-push-self-test-details")).toHaveTextContent("delivered_count");
+    expect(screen.getByTestId("resident-push-self-test-details")).toHaveTextContent("timestamp");
+  });
+
+  it("shows no-device feedback when delivered_count is zero", async () => {
+    mocks.sendPushTest.mockResolvedValueOnce({ delivery_status: "not_subscribed", delivered_count: 0 });
+    render(
+      <MemoryRouter>
+        <ResidentNotificationsPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(mocks.residentProfile).toHaveBeenCalled());
+    const button = await screen.findByRole("button", { name: "Invia notifica di test" });
+    await waitFor(() => expect(button).not.toBeDisabled());
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mocks.sendPushTest).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Nessun dispositivo registrato per le notifiche push.")).toBeInTheDocument();
+  });
+
+  it("shows error feedback when push test fails", async () => {
+    mocks.sendPushTest.mockRejectedValueOnce(new Error("fail"));
+    render(
+      <MemoryRouter>
+        <ResidentNotificationsPage />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(mocks.residentProfile).toHaveBeenCalled());
+    const button = await screen.findByRole("button", { name: "Invia notifica di test" });
+    await waitFor(() => expect(button).not.toBeDisabled());
+    fireEvent.click(button);
+
+    expect(await screen.findByText("Invio notifica non riuscito. Riprova più tardi.")).toBeInTheDocument();
   });
 });

@@ -29,6 +29,11 @@ export default function ResidentNotificationsPage() {
   const [pushState, setPushState] = useState<pushService.BrowserPushState>("disabled");
   const [pushDiag, setPushDiag] = useState<pushService.PushDiagnosticsSnapshot | null>(null);
   const [pushDiagLoading, setPushDiagLoading] = useState(false);
+  const [pushTestDetails, setPushTestDetails] = useState<{
+    delivery_status: string;
+    delivered_count: number;
+    timestamp: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!query.data) return;
@@ -126,6 +131,7 @@ export default function ResidentNotificationsPage() {
     setPushError(null);
     setPushMessage(null);
     setPushLoading(true);
+    setPushTestDetails(null);
     try {
       await pushService.unsubscribeFromPush();
       await refreshPushDiagnostics();
@@ -134,6 +140,31 @@ export default function ResidentNotificationsPage() {
       await refreshPushState(false);
     } catch (err) {
       setPushError(typeof err === "object" && err && "message" in err ? String((err as any).message) : "Impossibile disattivare le notifiche push");
+    } finally {
+      setPushLoading(false);
+    }
+  }
+
+  async function sendPushSelfTest() {
+    setPushError(null);
+    setPushMessage(null);
+    setPushLoading(true);
+    try {
+      const payload = await pushService.sendPushTest();
+      const details = {
+        delivery_status: payload.delivery_status,
+        delivered_count: payload.delivered_count,
+        timestamp: new Date().toISOString(),
+      };
+      setPushTestDetails(details);
+      if (details.delivered_count <= 0) {
+        setPushMessage("Nessun dispositivo registrato per le notifiche push.");
+        return;
+      }
+      setPushMessage("Notifica di test inviata correttamente.");
+    } catch {
+      setPushTestDetails(null);
+      setPushError("Invio notifica non riuscito. Riprova più tardi.");
     } finally {
       setPushLoading(false);
     }
@@ -223,12 +254,37 @@ export default function ResidentNotificationsPage() {
                   <button
                     className="btn btn--secondary touch-safe"
                     type="button"
+                    onClick={sendPushSelfTest}
+                    disabled={pushLoading || pushState !== "active"}
+                    data-testid="resident-push-self-test"
+                  >
+                    {pushLoading ? "Invio..." : "Invia notifica di test"}
+                  </button>
+                  <button
+                    className="btn btn--secondary touch-safe"
+                    type="button"
                     onClick={disablePushNotifications}
                     disabled={pushLoading || pushState !== "active"}
                   >
                     {pushLoading ? "Disattivazione..." : "Disattiva notifiche"}
                   </button>
                 </div>
+
+                {pushTestDetails ? (
+                  <div
+                    className="card"
+                    style={{ padding: 12 }}
+                    data-testid="resident-push-self-test-details"
+                  >
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      delivery_status: {pushTestDetails.delivery_status}
+                      <br />
+                      delivered_count: {pushTestDetails.delivered_count}
+                      <br />
+                      timestamp: {pushTestDetails.timestamp}
+                    </div>
+                  </div>
+                ) : null}
 
                 <details className="card" style={{ marginTop: 8 }}>
                   <summary className="card-title" style={{ cursor: "pointer" }}>

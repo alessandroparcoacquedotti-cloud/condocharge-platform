@@ -408,3 +408,156 @@ def test_push_agent_poller_notifies_admin_when_agent_goes_offline() -> None:
         assert history[0].resident_app_user_id == admin.id
     finally:
         db.close()
+
+
+def test_push_test_targets_only_current_user_and_ignores_other_subscribers() -> None:
+    client, session_factory = _build_client()
+    headers = _auth_headers(client, username="resident")
+
+    with session_factory() as db:
+        condo = db.scalar(select(Condominium).where(Condominium.name == "Push Condo"))
+        assert condo is not None
+        resident = db.scalar(
+            select(AppUser)
+            .where(AppUser.condominium_id == condo.id)
+            .where(AppUser.username == "resident")
+        )
+        assert resident is not None
+        admin = db.scalar(
+            select(AppUser)
+            .where(AppUser.condominium_id == condo.id)
+            .where(AppUser.username == "admin")
+        )
+        assert admin is not None
+
+        other = _seed_user(
+            db,
+            condo=condo,
+            username="other-resident",
+            role=AppUserRole.RESIDENT.value,
+        )
+        _seed_push_subscription(db, user=resident, endpoint="https://push.example/resident")
+        _seed_push_subscription(db, user=other, endpoint="https://push.example/other")
+        _seed_push_subscription(db, user=admin, endpoint="https://push.example/admin")
+
+    response = client.post("/api/v1/push/test", headers=headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["delivered_count"] == 1
+
+    with session_factory() as db:
+        rows = db.scalars(
+            select(ResidentNotificationHistory)
+            .where(ResidentNotificationHistory.channel == CHANNEL_WEB_PUSH)
+            .order_by(ResidentNotificationHistory.id.asc())
+        ).all()
+        assert len(rows) == 1
+        assert rows[0].resident_app_user_id is not None
+        assert rows[0].recipient == "https://push.example/resident"
+
+
+def test_push_test_respects_condominium_isolation() -> None:
+    from condocharge.app.services import push_notification_service as push_mod
+    from condocharge.core.config import get_settings
+
+    get_settings.cache_clear()
+
+    session_factory = _build_session_factory()
+    with session_factory() as db:
+        condo_a = _seed_condo(db, name="Condo A")
+        condo_a_id = condo_a.id
+        condo_b = _seed_condo(db, name="Condo B")
+        user_a = _seed_user(
+            db,
+            condo=condo_a,
+            username="resident-a",
+            role=AppUserRole.RESIDENT.value,
+        )
+        user_b = _seed_user(
+            db,
+            condo=condo_b,
+            username="resident-b",
+            role=AppUserRole.RESIDENT.value,
+        )
+        _seed_push_subscription(db, user=user_a, endpoint="https://push.example/a")
+        _seed_push_subscription(db, user=user_b, endpoint="https://push.example/b")
+
+    webpush_calls: list[str] = []
+
+    class FakeResponse:
+        status_code = 201
+
+    def fake_webpush(
+        *,
+        subscription_info: dict,
+        data: str,
+        vapid_private_key: str,
+        vapid_claims: dict,
+        ttl: int,
+    ):
+        del data, vapid_private_key, vapid_claims, ttl
+        webpush_calls.append(str(subscription_info.get("endpoint", "")))
+        return FakeResponse()
+
+    import os
+
+    original_webpush = push_mod.webpush
+    old_public = os.environ.get("CONDOCHARGE_WEB_PUSH_VAPID_PUBLIC_KEY")
+    old_private = os.environ.get("CONDOCHARGE_WEB_PUSH_VAPID_PRIVATE_KEY")
+    old_subject = os.environ.get("CONDOCHARGE_WEB_PUSH_VAPID_SUBJECT")
+    try:
+        setattr(push_mod, "webpush", fake_webpush)
+        os.environ["CONDOCHARGE_WEB_PUSH_VAPID_PUBLIC_KEY"] = "public"
+        os.environ["CONDOCHARGE_WEB_PUSH_VAPID_PRIVATE_KEY"] = "private"
+        os.environ["CONDOCHARGE_WEB_PUSH_VAPID_SUBJECT"] = "mailto:test@example.com"
+        get_settings.cache_clear()
+
+        app = create_app()
+
+        def override_get_db_session() -> Iterator[Session]:
+            db = session_factory()
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db_session] = override_get_db_session
+        client = TestClient(app)
+
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "resident-a", "password": "password123", "condominium": "Condo A"},
+        )
+        assert login.status_code == 200
+        token = login.json()["token"]["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        response = client.post("/api/v1/push/test", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["delivered_count"] == 1
+
+        assert webpush_calls == ["https://push.example/a"]
+
+        with session_factory() as db:
+            rows = db.scalars(
+                select(ResidentNotificationHistory)
+                .where(ResidentNotificationHistory.channel == CHANNEL_WEB_PUSH)
+                .order_by(ResidentNotificationHistory.id.asc())
+            ).all()
+            assert len(rows) == 1
+            assert rows[0].recipient == "https://push.example/a"
+            assert rows[0].condominium_id == condo_a_id
+    finally:
+        setattr(push_mod, "webpush", original_webpush)
+        if old_public is None:
+            os.environ.pop("CONDOCHARGE_WEB_PUSH_VAPID_PUBLIC_KEY", None)
+        else:
+            os.environ["CONDOCHARGE_WEB_PUSH_VAPID_PUBLIC_KEY"] = old_public
+        if old_private is None:
+            os.environ.pop("CONDOCHARGE_WEB_PUSH_VAPID_PRIVATE_KEY", None)
+        else:
+            os.environ["CONDOCHARGE_WEB_PUSH_VAPID_PRIVATE_KEY"] = old_private
+        if old_subject is None:
+            os.environ.pop("CONDOCHARGE_WEB_PUSH_VAPID_SUBJECT", None)
+        else:
+            os.environ["CONDOCHARGE_WEB_PUSH_VAPID_SUBJECT"] = old_subject
+        get_settings.cache_clear()
