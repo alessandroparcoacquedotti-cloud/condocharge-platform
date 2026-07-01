@@ -1,4 +1,4 @@
-# Screenshots Checklist
+﻿# Archived\n\nStatus: Closed\n\nThis document is archived for internal reference and is not part of the public product documentation.\n\n---\n\n# Screenshots Checklist
 
 Capture final screenshots for portfolio/release packaging:
 
@@ -34,5 +34,6 @@ Capture guidance:
 - Use demo/dev data only
 - Avoid real hostnames, real email addresses, and real secrets
 - Keep browser window size consistent
-- Prefer one clean “hero” screenshot per feature instead of many overlapping variants
+- Prefer one clean â€œheroâ€ screenshot per feature instead of many overlapping variants
+
 

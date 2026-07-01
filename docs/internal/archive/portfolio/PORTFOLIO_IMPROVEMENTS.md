@@ -1,4 +1,4 @@
-# Portfolio Improvements
+﻿# Archived\n\nStatus: Closed\n\nThis document is archived for internal reference and is not part of the public product documentation.\n\n---\n\n# Portfolio Improvements
 
 ## GitHub Metadata
 
@@ -51,3 +51,4 @@ When screenshots are ready, prefer a small number of strong images over a large 
 - Use filenames like `hero-dashboard.png`, `admin-billing.png`, and `resident-dashboard.png`
 - Avoid real names, hostnames, email addresses, payment references, or pilot infrastructure details
 - Keep browser size and zoom consistent across all images
+

@@ -2,7 +2,10 @@
 
 ## Overview
 
-CondoCharge is a full-stack EV charging management platform for multi-tenant condominium environments.
+Condo Charge is a full-stack EV charging management platform for multi-tenant condominium environments.
+
+Commercial name: Condo Charge.
+Code name: `CondoCharge`.
 
 Main layers:
 
@@ -93,4 +96,3 @@ Current repository artifacts support:
 - PostgreSQL container via `docker-compose.yml`
 
 The current async import/reminder workflow uses in-process background tasks and is designed so it can later move behind a durable worker queue.
-

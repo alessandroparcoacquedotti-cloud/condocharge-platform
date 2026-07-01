@@ -1,4 +1,4 @@
-# Portfolio Notes
+﻿# Archived\n\nStatus: Closed\n\nThis document is archived for internal reference and is not part of the public product documentation.\n\n---\n\n# Portfolio Notes
 
 ## Short Pitch
 
@@ -48,4 +48,5 @@ Recommended demo story:
 - This is not yet a fully production-hardened background-job platform
 - In-process async tasks are suitable for demo/dev and architectural direction, not final scale
 - SMTP and deployment need environment-specific production setup
+
 

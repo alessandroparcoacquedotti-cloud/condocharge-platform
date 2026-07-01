@@ -1,4 +1,4 @@
-# Release Notes: v1.0.0
+﻿# Archived\n\nStatus: Closed\n\nThis document is archived for internal reference and is not part of the public product documentation.\n\n---\n\n# Release Notes: v1.0.0
 
 Recommended tag: `v1.0.0`
 
@@ -37,3 +37,4 @@ Use this release as the public baseline for:
 ## Suggested Release Description
 
 CondoCharge is a condominium EV charging management platform that helps building operators attribute shared charging sessions to residents, generate billing statements, reconcile payments, and provide residents with transparent consumption and billing visibility.
+

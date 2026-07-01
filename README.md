@@ -1,107 +1,124 @@
-# CondoCharge
+# Condo Charge
+
+> Smart EV charging platform for condominiums
 
 [![CI](https://github.com/alessandroparcoacquedotti-cloud/condocharge-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/alessandroparcoacquedotti-cloud/condocharge-platform/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-PWA_UI-61DAFB?logo=react&logoColor=0b1020)
+![Railway](https://img.shields.io/badge/Railway-Deploy-0B0D0E?logo=railway&logoColor=white)
+![PWA](https://img.shields.io/badge/PWA-Mobile--First-5A0FC8?logo=pwa&logoColor=white)
 
-CondoCharge is a multi-tenant condominium EV charging management platform built for real-world operational workflows and portfolio presentation.
-
-It combines:
-
-- Resident charging and consumption visibility
-- Admin cost accounting and resident assignment
-- Billing periods and generated resident statements
-- PDF statement export
-- Payment reconciliation and CSV payment import
-- Email reminder / receipt / statement preview and SMTP delivery flows
-- Tenant isolation with role-based access control
+**Condo Charge** e la piattaforma intelligente per la gestione della ricarica elettrica nei condomini, progettata per dare a residenti e amministratori una visione chiara, moderna e operativa del servizio.
 
 <p align="center">
-  <img src="docs/images/02-admin-dashboard.png" width="100%">
+  <img src="docs/images/02-admin-dashboard.png" alt="Condo Charge admin dashboard" width="100%">
+</p>
+
+## Product Overview
+
+Condo Charge non e una semplice app per vedere le colonnine.
+
+E una piattaforma prodotto che collega infrastruttura di ricarica, monitoraggio operativo, esperienza residente e controllo amministrativo in un unico flusso coerente.
+
+## Key Features
+
+- Stato colonnine in tempo reale
+- Notifiche Push
+- Integrazione Telegram
+- Storico ricariche
+- Gestione RFID
+- Dashboard amministratore
+- Health monitoring dell'agente e della sincronizzazione
+- Architettura pensata per un pilot reale in contesto condominiale
+
+## Resident Features
+
+- Vista mobile-first dello stato delle colonnine
+- Storico delle proprie ricariche
+- Notifiche di servizio tramite Push
+- Comunicazioni rapide tramite Telegram
+- Esperienza semplificata e focalizzata sulla disponibilita
+
+## Admin Features
+
+- Dashboard operativa del condominio
+- Supervisione dello stato delle colonnine
+- Gestione residenti e assegnazioni RFID
+- Billing e riconciliazione pagamenti
+- Visibilita sullo stato dell'agente e del polling
+- Controllo del servizio senza dipendere da verifiche manuali
+
+## Technical Architecture
+
+```mermaid
+flowchart LR
+    RPWA[Resident PWA]
+    APWA[Admin PWA]
+    RFE[Railway Frontend]
+    RBE[Railway Backend]
+    SQLITE[SQLite volume]
+    AGENT[Windows Agent]
+    LEGRAND[Legrand stations]
+    TG[Telegram]
+    PUSH[Web Push]
+
+    RPWA --> RFE
+    APWA --> RFE
+    RFE --> RBE
+    RBE --> SQLITE
+    AGENT --> RBE
+    LEGRAND --> AGENT
+    RBE --> TG
+    RBE --> PUSH
+```
+
+### Architecture Notes
+
+- `frontend/` ospita la PWA React per residenti e amministratori
+- `backend/` ospita l'API FastAPI e la logica di dominio
+- SQLite e usato come storage del pilot
+- Un agente Windows locale effettua heartbeat e polling delle stazioni Legrand
+- Telegram e Web Push estendono la comunicazione oltre la sola interfaccia web
+
+## Production Status
+
+- **Status:** Production Pilot
+- **Deployment shape:** Railway frontend + Railway backend + SQLite volume + Windows agent locale
+- **Current scope:** monitoraggio, resident UX, amministrazione, notifiche, RFID, billing del pilot
+- **Operational note:** repository presentato come prodotto in evoluzione, con focus su affidabilita e demo readiness
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/01-login.png" alt="Condo Charge login" width="49%">
+  <img src="docs/images/03-resident-dashboard.png" alt="Condo Charge resident dashboard" width="49%">
 </p>
 
 <p align="center">
-  <img src="docs/images/03-resident-dashboard.png" width="100%">
+  <img src="docs/images/02-admin-dashboard.png" alt="Condo Charge admin dashboard" width="49%">
+  <img src="docs/images/04-billing-reconciliation.png" alt="Condo Charge billing and reconciliation" width="49%">
 </p>
 
-<p align="center">
-  <img src="docs/images/04-billing-reconciliation.png" width="100%">
-</p>
+Required screenshot placeholders and capture list are maintained in [docs/screenshots/README.md](docs/screenshots/README.md).
 
-# Problem
+## Roadmap
 
-Condominiums that install shared EV chargers quickly run into an operational problem: electricity is consumed by individual residents, but the infrastructure, invoices, and support workload sit with building management.
+- **v1.0.0 Production Pilot**: resident experience, admin dashboard, RFID, notifications, health visibility
+- **v1.1.0 Planned Smart Queue**: Smart Queue, prenotazione intelligente, timer di disponibilita
+- **v1.2.0 Planned Analytics**: statistiche avanzate, reporting e insight per il condominio
 
-Without a clear process, administrators are left reconciling spreadsheets, charger exports, bank transfers, and resident questions by hand. Typical pain points include:
+## Demo
 
-- unclear attribution of charging sessions to individual residents
-- inconsistent RFID-card assignment and resident onboarding
-- no clean billing period close process for shared charging costs
-- difficult reconciliation between statements issued and payments received
-- poor resident visibility into usage, charges, and payment status
+- [5-minute demo script](docs/demo/DEMO_SCRIPT.md)
+- [Demo checklist](docs/demo/DEMO_CHECKLIST.md)
+- [Release notes v1.0.0](docs/releases/v1.0.0.md)
+- [Product positioning](docs/product/positioning.md)
+- [LinkedIn launch post](docs/marketing/linkedin-launch-post.md)
 
-# Solution
+## Installation Overview
 
-CondoCharge gives condominium operators a practical end-to-end workflow for shared EV charging administration.
-
-- Resident attribution: charging sessions are linked to RFID users and then mapped to residents so usage is assigned to the right apartment.
-- Billing: admins create billing periods, generate resident statements, and export statement PDFs for communication and record keeping.
-- Reconciliation: imported bank-payment rows can be matched against statements, with duplicates and unmatched payments tracked explicitly instead of disappearing into spreadsheets.
-- Payment tracking: every statement keeps payment status, amount paid, amount due, reminder history, and notification history in one place.
-
-# Key Features
-
-- Multi-tenant condominium architecture with strict data separation
-- Admin portal for residents, RFID assignment, billing, reconciliation, and notifications
-- Resident portal for session history, consumption visibility, and billing review
-- Statement generation with payment references and PDF exports
-- CSV-based payment import with job history and unmatched-payment queue
-- Reminder, receipt, and statement delivery flows with preview mode and SMTP support
-- Legrand charging integration for station status and imported charging sessions
-
-## Product Summary
-
-CondoCharge helps a condominium operator manage shared EV charging infrastructure from imported charging sessions through billing and payment reconciliation.
-
-Core capabilities:
-
-- Multi-tenant condominium model with tenant-safe data isolation
-- JWT-authenticated API with `admin`, `resident`, and `viewer` roles
-- Resident dashboard for consumption history and billing visibility
-- Admin tools for residents, RFID assignment, cost review, billing, reconciliation, reminders, and SMTP health
-- Statement generation from charging sessions
-- Payment records, partial payment support, unmatched payment queue, and import job history
-- Deterministic email templates with preview mode when SMTP is disabled
-
-## Architecture
-
-- Backend: FastAPI application under `backend/src/condocharge`
-- Frontend: React + TypeScript + Vite under `frontend/src`
-- ORM / migrations: SQLAlchemy + Alembic
-- Auth: JWT access tokens with tenant and role claims
-- Domain services: billing, payment import, reminders, PDF generation, and email delivery
-
-See:
-
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [SECURITY_MODEL.md](docs/SECURITY_MODEL.md)
-- [BILLING_FLOW.md](docs/BILLING_FLOW.md)
-- [DEMO_DATA.md](docs/DEMO_DATA.md)
-- [DEMO_WALKTHROUGH.md](docs/DEMO_WALKTHROUGH.md)
-- [DEPLOYMENT.md](docs/DEPLOYMENT.md)
-- [RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md)
-- [PORTFOLIO_NOTES.md](docs/PORTFOLIO_NOTES.md)
-- [PORTFOLIO_IMPROVEMENTS.md](docs/PORTFOLIO_IMPROVEMENTS.md)
-
-## Additional Docs
-
-- [SCREENSHOTS_CHECKLIST.md](docs/SCREENSHOTS_CHECKLIST.md)
-
-## Repo Layout
-
-- `backend`: FastAPI app, services, Alembic migrations, tests, tools
-- `frontend`: React SPA, admin and resident pages, API client
-- `docs`: deployment, architecture, billing, security, release, and portfolio notes
-
-## Local Startup
+Condo Charge e organizzato come monorepo con `backend/`, `frontend/` e documentazione in `docs/`.
 
 ### Backend
 
@@ -126,63 +143,32 @@ cd backend
 python -m condocharge.tools.demo_seed
 ```
 
-This adds demo/dev-only data without deleting existing data.
+Per dettagli di setup e deployment:
 
-## Tests And Verification
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md)
 
-### Backend Tests
+## Tech Stack
 
-```powershell
-cd backend
-python -m pytest
-```
+- **Frontend:** React, TypeScript, Vite, PWA
+- **Backend:** FastAPI, SQLAlchemy, Alembic
+- **Database:** SQLite
+- **Infra:** Railway
+- **Agent:** Python Windows service con polling Legrand
+- **Notifications:** Telegram, Web Push
+- **Docs and release packaging:** Markdown, Mermaid, screenshots, release notes
 
-### Frontend Production Build
+## Repository Presentation
 
-```powershell
-cd frontend
-npm run build
-```
+- [Architecture deep dive](docs/ARCHITECTURE.md)
+- [Billing flow](docs/BILLING_FLOW.md)
+- [Release notes](docs/releases/v1.0.0.md)
+- [Demo materials](docs/demo/DEMO_SCRIPT.md)
+- [Marketing positioning](docs/product/positioning.md)
 
-### Migration Smoke Test From Empty SQLite DB
+## License / Status Note
 
-```powershell
-cd backend
-$env:CONDOCHARGE_DATABASE_URL='sqlite+pysqlite:///./migration_smoke.sqlite3'
-python -m alembic upgrade head
-```
-
-## Environment Variables
-
-Required or important runtime settings are documented in:
-
-- `.env.example`
-- [DEPLOYMENT.md](docs/DEPLOYMENT.md)
-
-Key settings:
-
-- `CONDOCHARGE_DATABASE_URL`
-- `CONDOCHARGE_JWT_SECRET_KEY`
-- `CONDOCHARGE_CORS_ORIGINS`
-- `CONDOCHARGE_EMAIL_ENABLED`
-- `CONDOCHARGE_EMAIL_FROM`
-- `CONDOCHARGE_SMTP_HOST`
-- `CONDOCHARGE_SMTP_PORT`
-- `CONDOCHARGE_SMTP_USERNAME`
-- `CONDOCHARGE_SMTP_PASSWORD`
-- `CONDOCHARGE_SMTP_USE_TLS`
-
-## Local Dev Defaults Warning
-
-- The seeded `admin/admin` account is for local development convenience only.
-- Production must use a strong JWT secret.
-- Production must use a non-default admin password.
-- SMTP credentials and secrets must never be committed.
-
-## Roadmap
-
-- Durable async worker execution for import and reminder jobs
-- Scheduled reminder automation with persisted run history
-- Real SMTP integration verification in staging
-- Statement-send / retry UX polish and operational audit export
-- Production deployment templates and smoke-test automation
+- Repository licensed under [LICENSE](LICENSE)
+- Questo repository e presentato come prodotto pilot professionale, non come semplice repository di codice
+- Nessun segreto, token reale, database path privato o dato personale reale deve essere incluso nella documentazione o negli screenshot

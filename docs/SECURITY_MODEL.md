@@ -2,7 +2,7 @@
 
 ## Tenant Isolation
 
-CondoCharge is designed as a multi-tenant application where each condominium is a data boundary.
+Condo Charge is designed as a multi-tenant application where each condominium is a data boundary.
 
 Isolation rules:
 
@@ -73,4 +73,3 @@ Rules:
 - Restrict CORS to known frontend origins
 - Run behind HTTPS and a production-grade reverse proxy
 - Move async jobs to a durable worker/scheduler before high-volume production use
-

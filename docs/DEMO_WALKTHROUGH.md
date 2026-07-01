@@ -1,13 +1,13 @@
 # Demo Walkthrough
 
-This walkthrough is the recommended sequence for a recruiter, stakeholder, or evaluator demo.
+This walkthrough is the recommended sequence for a condominium administrator demo.
 
 The flow is intentionally operational: it starts from the admin side, shows how charging gets attributed and billed, and ends in the resident portal.
 
 ## 1. Admin Login
 
 - Sign in as the condominium administrator
-- Explain that CondoCharge is scoped per condominium and role
+- Explain that Condo Charge is scoped per condominium and role
 - Highlight that admins see resident, billing, and reconciliation workflows that residents do not
 
 ## 2. Dashboard
@@ -67,7 +67,7 @@ The flow is intentionally operational: it starts from the admin side, shows how 
 ## Suggested Narration
 
 - Shared chargers create a billing and attribution problem for condominiums
-- CondoCharge links usage to residents through RFID mapping
+- Condo Charge links usage to residents through RFID mapping
 - Admins can close a monthly billing cycle without manual spreadsheets
 - Reconciliation and payment tracking turn charger usage into an auditable process
 - Residents get visibility into their own consumption and charges without seeing anyone else’s data

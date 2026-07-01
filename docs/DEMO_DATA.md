@@ -2,7 +2,7 @@
 
 This document defines the recommended demo dataset for screenshots, walkthroughs, and public portfolio presentation.
 
-The goal is to present CondoCharge as a believable condominium operating shared EV charging, not as a generic sample app with placeholder names.
+The goal is to present Condo Charge as a believable condominium operating shared EV charging, not as a generic sample app with placeholder names.
 
 ## Demo Condominium
 

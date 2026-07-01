@@ -2,7 +2,7 @@
 
 ## Overview
 
-CondoCharge Phase 6 adds Telegram notifications for:
+Condo Charge Phase 6 adds Telegram notifications for:
 
 - station available
 - charging session completed
@@ -79,13 +79,13 @@ Expected webhook path:
 
 ## Resident Linking Flow
 
-1. Resident signs in to CondoCharge.
+1. Resident signs in to Condo Charge.
 2. Resident opens `Profile`.
 3. Resident clicks `Generate Telegram link`.
-4. CondoCharge creates a one-time link token and shows the bot deep link.
+4. Condo Charge creates a one-time link token and shows the bot deep link.
 5. Resident opens the bot link in Telegram.
 6. Telegram sends `/start <token>` to the backend webhook.
-7. CondoCharge stores:
+7. Condo Charge stores:
    - `telegram_chat_id`
    - `telegram_username`
    - `telegram_linked_at`
